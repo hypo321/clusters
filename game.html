@@ -116,7 +116,9 @@
     }
 
     #checkBtn,
-    #debugBtn {
+    #debugBtn,
+    #resetBtn,
+    #nextBtn {
       display: none;
     }
 
@@ -232,6 +234,11 @@
       100% { box-shadow: 0 0 0 0 rgba(198, 109, 67, 0); }
     }
 
+    @keyframes successRingOrbit {
+      from { transform: translate(-50%, -50%) rotate(var(--orbit-start-angle, 0deg)) translateX(var(--orbit-radius, 150px)); }
+      to { transform: translate(-50%, -50%) rotate(calc(var(--orbit-start-angle, 0deg) + 360deg)) translateX(var(--orbit-radius, 150px)); }
+    }
+
     .board {
       position: relative;
       width: 100%;
@@ -284,6 +291,27 @@
       animation: counterOrbitSpin 15s linear infinite;
     }
 
+    .pile.celebration-orbit {
+      left: 50%;
+      top: 50%;
+      z-index: 3;
+      animation: successRingOrbit 18s linear infinite;
+    }
+
+    .pile.celebration-orbit .card {
+      animation: successCardCounterSpin 18s linear infinite;
+    }
+
+    .pile.celebration-core {
+      z-index: 4;
+      opacity: 1;
+      filter: none;
+    }
+
+    .pile.success-hidden {
+      visibility: hidden;
+    }
+
     .pile.bonding {
       animation: bondPulse 280ms ease;
     }
@@ -298,6 +326,11 @@
       to { transform: rotate(-360deg); }
     }
 
+    @keyframes successCardCounterSpin {
+      from { transform: rotate(var(--orbit-counter-start, 0deg)); }
+      to { transform: rotate(var(--orbit-counter-end, -360deg)); }
+    }
+
     @keyframes bondPulse {
       0% { transform: scale(0.92); }
       50% { transform: scale(1.06); }
@@ -307,6 +340,17 @@
     .pile.resolved {
       opacity: 0.7;
       filter: saturate(0.9);
+    }
+
+    .boardWrap.celebrating .pile.group.resolved {
+      opacity: 0.88;
+    }
+
+    .boardWrap.success-settling .pile.orbit,
+    .boardWrap.success-settling .pile.orbit .card,
+    .boardWrap.success-settling .pile.celebration-orbit,
+    .boardWrap.success-settling .pile.celebration-orbit .card {
+      animation-play-state: paused;
     }
 
     .pile.odd-one {
@@ -391,6 +435,46 @@
       transition: all 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
+    .fxPile {
+      position: fixed;
+      z-index: 1001;
+      pointer-events: none;
+      transform: none !important;
+      animation: none !important;
+    }
+
+    .success-action {
+      position: absolute;
+      z-index: 8;
+      min-width: 136px;
+      height: 52px;
+      border-radius: 999px;
+      border: 1px solid rgba(164, 127, 85, 0.75);
+      background: linear-gradient(180deg, #fff7ea 0%, #f2dbb8 100%);
+      color: #5a4128;
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      box-shadow: 0 8px 16px rgba(122, 82, 35, 0.2);
+      cursor: pointer;
+      transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+    }
+
+    .success-action:hover {
+      transform: translateY(-1px);
+      border-color: rgba(145, 102, 61, 0.95);
+      box-shadow: 0 12px 20px rgba(122, 82, 35, 0.24);
+    }
+
+    .success-action:active {
+      transform: translateY(0);
+      box-shadow: 0 5px 12px rgba(122, 82, 35, 0.2);
+    }
+
+    .success-action.next {
+      background: linear-gradient(180deg, #fef7e5 0%, #edd4a7 100%);
+    }
+
     @media (max-width: 1020px) {
       .board, .boardWrap { min-height: 460px; height: 460px; }
       .card { width: 74px; height: 74px; font-size: 38px; }
@@ -411,8 +495,8 @@
       <div class="row">
         <div class="controls">
           <button id="checkBtn">Check</button>
-          <button id="resetBtn">Reset Layout</button>
-          <button id="nextBtn">Next Day</button>
+          <button id="resetBtn">Replay</button>
+          <button id="nextBtn">Next</button>
           <button id="debugBtn" title="Copy current game state JSON to clipboard">Debug: Copy State</button>
         </div>
         <div class="controls">
@@ -431,7 +515,7 @@
         </div>
       </div>
 
-      <div class="status" id="status">Build 3 trios. A trio works if all 3 share letter, font, or colour.</div>
+      <div class="status" id="status">Build 3 trios. A trio works if all 3 share letter, font, or colour. Mix at least 2 match-types across the 3 trios.</div>
       <div class="rule">Tip: drop a letter on empty space to pull it back out of a cluster.</div>
 
       <div class="boardWrap" id="boardWrap">
@@ -444,6 +528,7 @@
     const SETTINGS_KEY = "letter_group_settings_v1";
 
     const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
+    const MATCH_ATTRIBUTES = ["letter", "color", "font"];
     const DESKTOP_CARD_SIZE = 84;
     const MOBILE_CARD_SIZE = 74;
     const PILE_GAP = 10;
@@ -455,6 +540,7 @@
     let draggedCardId = null;
     let boardDragDepth = 0;
     let solvedToday = false;
+    let successCelebration = null;
 
     const boardEl = document.getElementById("board");
     const boardWrapEl = document.getElementById("boardWrap");
@@ -550,6 +636,24 @@
       return attrs;
     }
 
+    function sharedAttributesAcrossTrios(attrLists) {
+      if (!attrLists.length) return [];
+      return MATCH_ATTRIBUTES.filter(attr => attrLists.every(list => list.includes(attr)));
+    }
+
+    function isMonotoneAcrossTrios(attrLists) {
+      return sharedAttributesAcrossTrios(attrLists).length > 0;
+    }
+
+    function summarizeSolveAttributes(solution, byId) {
+      const attrLists = solution.groups.map(groupIds => trioSameAttributes(groupIds.map(id => byId[id])));
+      return {
+        attrLists,
+        sharedAcrossAllTrios: sharedAttributesAcrossTrios(attrLists),
+        monotoneAcrossTrios: isMonotoneAcrossTrios(attrLists)
+      };
+    }
+
     function solvePuzzle(cards) {
       const byId = Object.fromEntries(cards.map(c => [c.id, c]));
       const ids = cards.map(c => c.id).sort();
@@ -621,7 +725,10 @@
         if (!dedup.has(key)) dedup.set(key, sol);
       }
 
-      return [...dedup.values()];
+      return [...dedup.values()].map(sol => ({
+        ...sol,
+        ...summarizeSolveAttributes(sol, byId)
+      }));
     }
 
     function generatePuzzle(seed) {
@@ -657,6 +764,7 @@
         const solutions = solvePuzzle(cards);
         if (solutions.length === 0) continue;
         if (solutions.length > 140) continue;
+        if (solutions.some(sol => sol.monotoneAcrossTrios)) continue;
 
         const cardById = Object.fromEntries(cards.map(c => [c.id, c]));
         const leftovers = new Set(solutions.map(s => s.leftoverId));
@@ -896,6 +1004,42 @@
       boardWrapEl.classList.add("success");
     }
 
+    function clearSuccessCelebration() {
+      successCelebration = null;
+      boardWrapEl.classList.remove("celebrating");
+      boardWrapEl.classList.remove("success-settling");
+    }
+
+    function startSuccessCelebration(trioPiles, leftoverPile) {
+      const width = boardEl.clientWidth || 900;
+      const height = boardEl.clientHeight || 520;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const trioLayout = getPileLayout(3);
+      const edgeMargin = 26;
+      const maxRadiusX = Math.max(0, width / 2 - trioLayout.width / 2 - edgeMargin);
+      const maxRadiusY = Math.max(0, height / 2 - trioLayout.height / 2 - edgeMargin);
+      const orbitRadius = Math.min(maxRadiusX, maxRadiusY);
+
+      const angleForPile = (pile) => {
+        const circle = getPileCircle(pile);
+        return Math.atan2(circle.cy - centerY, circle.cx - centerX);
+      };
+
+      const orbitPileIds = [...trioPiles]
+        .sort((a, b) => angleForPile(a) - angleForPile(b))
+        .map(p => p.id);
+
+      successCelebration = {
+        centerX,
+        centerY,
+        orbitRadius,
+        oddPileId: leftoverPile.id,
+        orbitIndexByPileId: Object.fromEntries(orbitPileIds.map((id, idx) => [id, idx]))
+      };
+      boardWrapEl.classList.add("celebrating");
+    }
+
     function scheduleOddRevealClear(pileId, oddRevealUntil) {
       window.setTimeout(() => {
         const pile = piles.find(p => p.id === pileId);
@@ -926,10 +1070,24 @@
       return [...new Set(ids.filter(Boolean))];
     }
 
+    function uniquePileIds(ids) {
+      return [...new Set(ids.filter(Boolean))];
+    }
+
     function captureCardRects(cardIds) {
       const rects = new Map();
       for (const id of uniqueCardIds(cardIds)) {
         const el = boardEl.querySelector(`.card[data-card-id="${id}"]`);
+        if (!el) continue;
+        rects.set(id, el.getBoundingClientRect());
+      }
+      return rects;
+    }
+
+    function capturePileRects(pileIds) {
+      const rects = new Map();
+      for (const id of uniquePileIds(pileIds)) {
+        const el = boardEl.querySelector(`.pile[data-pile-id="${id}"]`);
         if (!el) continue;
         rects.set(id, el.getBoundingClientRect());
       }
@@ -974,6 +1132,117 @@
         ghost.addEventListener("transitionend", cleanup);
         window.setTimeout(cleanup, durationMs + 60);
       }
+    }
+
+    function animateSolveTransitionPiles(pileIds, beforeRects) {
+      const durationMs = 640;
+      const cleanups = [];
+
+      for (const id of uniquePileIds(pileIds)) {
+        const from = beforeRects.get(id);
+        const toEl = boardEl.querySelector(`.pile[data-pile-id="${id}"]`);
+        if (!from || !toEl) continue;
+        const to = toEl.getBoundingClientRect();
+
+        const travel = Math.hypot(to.left - from.left, to.top - from.top);
+        const resize = Math.max(Math.abs(to.width - from.width), Math.abs(to.height - from.height));
+        if (travel < 1.5 && resize < 1.5) continue;
+
+        toEl.classList.add("success-hidden");
+
+        const ghost = toEl.cloneNode(true);
+        ghost.classList.add("fxPile");
+        ghost.classList.remove("celebration-orbit", "orbit", "bonding", "shake", "drop-target", "success-hidden");
+        ghost.classList.remove("odd-pulse", "odd-reveal");
+        ghost.style.left = `${from.left}px`;
+        ghost.style.top = `${from.top}px`;
+        ghost.style.width = `${from.width}px`;
+        ghost.style.height = `${from.height}px`;
+        ghost.style.margin = "0";
+        ghost.style.transition = [
+          `left ${durationMs}ms cubic-bezier(0.2, 0.82, 0.25, 1)`,
+          `top ${durationMs}ms cubic-bezier(0.2, 0.82, 0.25, 1)`,
+          `width ${durationMs}ms cubic-bezier(0.2, 0.82, 0.25, 1)`,
+          `height ${durationMs}ms cubic-bezier(0.2, 0.82, 0.25, 1)`,
+          `opacity ${durationMs}ms ease`
+        ].join(", ");
+        document.body.appendChild(ghost);
+
+        requestAnimationFrame(() => {
+          ghost.style.left = `${to.left}px`;
+          ghost.style.top = `${to.top}px`;
+          ghost.style.width = `${to.width}px`;
+          ghost.style.height = `${to.height}px`;
+          ghost.style.opacity = "0.88";
+        });
+
+        const cleanup = () => {
+          ghost.removeEventListener("transitionend", cleanup);
+          ghost.remove();
+          toEl.classList.remove("success-hidden");
+        };
+
+        ghost.addEventListener("transitionend", cleanup);
+        cleanups.push(cleanup);
+      }
+
+      window.setTimeout(() => {
+        cleanups.forEach(fn => fn());
+        boardWrapEl.classList.remove("success-settling");
+      }, durationMs + 90);
+    }
+
+    function replayCurrentDay() {
+      if (!puzzle) return;
+      const seed = dateKeyToSeed(puzzle.dateKey);
+      clearSuccessCelebration();
+      piles = buildInitialPiles(seed);
+      resolveAllPileOverlaps();
+      renderBoard();
+      boardWrapEl.classList.remove("success");
+      checkBtn.disabled = false;
+      setStatus("Layout reset. Build 3 trios, leave 1 leftover, and mix match-types.");
+    }
+
+    function goToNextDay() {
+      dayOffset += 1;
+      loadDay(dayOffset);
+    }
+
+    function renderSuccessActions(celebration) {
+      if (!celebration) return;
+
+      const buttonWidth = 148;
+      const buttonHeight = 52;
+      const sideMargin = 12;
+      const trioLayout = getPileLayout(3);
+      const groupRadius = Math.max(trioLayout.width, trioLayout.height) / 2;
+      const sideOffset = celebration.orbitRadius + groupRadius + 26;
+      const y = celebration.centerY - buttonHeight / 2;
+      const minX = sideMargin;
+      const maxX = Math.max(minX, boardEl.clientWidth - buttonWidth - sideMargin);
+
+      const leftBtn = document.createElement("button");
+      leftBtn.className = "success-action replay";
+      leftBtn.type = "button";
+      leftBtn.textContent = "Replay";
+      leftBtn.style.width = `${buttonWidth}px`;
+      leftBtn.style.height = `${buttonHeight}px`;
+      leftBtn.style.left = `${clamp(celebration.centerX - sideOffset - buttonWidth / 2, minX, maxX)}px`;
+      leftBtn.style.top = `${y}px`;
+      leftBtn.addEventListener("click", replayCurrentDay);
+      boardEl.appendChild(leftBtn);
+
+      const rightBtn = document.createElement("button");
+      rightBtn.className = "success-action next";
+      rightBtn.type = "button";
+      rightBtn.textContent = "Next";
+      rightBtn.style.width = `${buttonWidth}px`;
+      rightBtn.style.height = `${buttonHeight}px`;
+      rightBtn.style.left = `${clamp(celebration.centerX + sideOffset - buttonWidth / 2, minX, maxX)}px`;
+      rightBtn.style.top = `${y}px`;
+      rightBtn.addEventListener("click", goToNextDay);
+      boardEl.appendChild(rightBtn);
     }
 
     function schedulePileShakeClear(pileId, shakeUntil) {
@@ -1165,12 +1434,16 @@
       const matchingSolutions = (leftoverId && playerSignature)
         ? puzzle.solutions.filter(sol => sol.leftoverId === leftoverId && sol.signature === playerSignature)
         : [];
+      const attrLists = trioDetails.map(detail => detail.sameAttrs);
+      const sharedAcrossAllTrios = sharedAttributesAcrossTrios(attrLists);
 
       return {
         trioCount: trioPiles.length,
         singletonCount: singletonPiles.length,
         oddPileCount: oddPiles.length,
         trioDetails,
+        sharedAcrossAllTrios,
+        monotoneAcrossTrios: sharedAcrossAllTrios.length > 0,
         leftoverId,
         leftoverLetter: leftoverId ? cardDisplayText(puzzle.cardById[leftoverId]) : null,
         playerSignature,
@@ -1209,6 +1482,8 @@
         leftoverId: sol.leftoverId,
         leftoverLetter: cardDisplayText(puzzle.cardById[sol.leftoverId]),
         signature: sol.signature,
+        sharedAcrossAllTrios: sol.sharedAcrossAllTrios,
+        monotoneAcrossTrios: sol.monotoneAcrossTrios,
         groups: sol.groups.map(groupIds => groupIds.map(id => cardDisplayText(puzzle.cardById[id])))
       }));
 
@@ -1240,6 +1515,7 @@
         },
         board: {
           solvedToday,
+          successCelebration,
           piles: piles.map(pile => ({
             id: pile.id,
             cardIds: [...pile.cardIds],
@@ -1388,6 +1664,7 @@
     function renderBoard() {
       boardEl.innerHTML = "";
       const highlightErrors = !!highlightErrorsToggle.checked;
+      const celebration = solvedToday ? successCelebration : null;
 
       for (const pile of piles) {
         const pileCards = pile.cardIds.map(id => puzzle.cardById[id]);
@@ -1409,10 +1686,27 @@
         if (pile.locked) pileEl.classList.add("resolved");
 
         pileEl.dataset.pileId = pile.id;
-        pileEl.style.left = `${pile.x}px`;
-        pileEl.style.top = `${pile.y}px`;
         pileEl.style.width = `${layout.width}px`;
         pileEl.style.height = `${layout.height}px`;
+
+        if (celebration && pile.id === celebration.oddPileId) {
+          pileEl.classList.add("celebration-core");
+          pileEl.style.left = `${celebration.centerX - layout.width / 2}px`;
+          pileEl.style.top = `${celebration.centerY - layout.height / 2}px`;
+        } else if (celebration && pile.cardIds.length === 3 && pile.locked) {
+          const orbitIndex = celebration.orbitIndexByPileId[pile.id] ?? 0;
+          const startAngle = orbitIndex * 120;
+          pileEl.classList.add("celebration-orbit");
+          pileEl.style.left = `${celebration.centerX}px`;
+          pileEl.style.top = `${celebration.centerY}px`;
+          pileEl.style.setProperty("--orbit-radius", `${celebration.orbitRadius}px`);
+          pileEl.style.setProperty("--orbit-start-angle", `${startAngle}deg`);
+          pileEl.style.setProperty("--orbit-counter-start", `${-startAngle}deg`);
+          pileEl.style.setProperty("--orbit-counter-end", `${-(startAngle + 360)}deg`);
+        } else {
+          pileEl.style.left = `${pile.x}px`;
+          pileEl.style.top = `${pile.y}px`;
+        }
 
         pileEl.addEventListener("dragenter", (e) => {
           if (!draggedCardId) return;
@@ -1461,6 +1755,10 @@
 
         boardEl.appendChild(pileEl);
       }
+
+      if (solvedToday && celebration) {
+        renderSuccessActions(celebration);
+      }
     }
 
     function checkCurrentBoard(options = {}) {
@@ -1495,6 +1793,7 @@
           sameAttrs
         };
       });
+      const sharedAcrossAllTrios = sharedAttributesAcrossTrios(trioEvaluations.map(e => e.sameAttrs));
 
       let allValid = true;
       for (const evald of trioEvaluations) {
@@ -1507,6 +1806,13 @@
 
       if (!allValid) {
         setStatus("At least one trio is invalid. Match by same letter, same font, or same colour.", "bad");
+        return;
+      }
+
+      if (sharedAcrossAllTrios.length > 0) {
+        trioPiles.forEach(p => { p.validState = false; });
+        renderBoard();
+        setStatus(`Nice clusters, but all three share ${sharedAcrossAllTrios.join(" / ")}. Mix match-types across trios.`, "bad");
         return;
       }
 
@@ -1533,13 +1839,18 @@
         p.validState = true;
       });
       const leftoverPile = singletonPiles[0];
+      const movedPileIds = [...trioPiles.map(p => p.id), leftoverPile.id];
+      const beforePileRects = capturePileRects(movedPileIds);
       leftoverPile.locked = true;
       leftoverPile.oddOne = true;
       leftoverPile.oddRevealUntil = Date.now() + 520;
 
       solvedToday = true;
       checkBtn.disabled = true;
+      startSuccessCelebration(trioPiles, leftoverPile);
+      boardWrapEl.classList.add("success-settling");
       renderBoard();
+      animateSolveTransitionPiles(movedPileIds, beforePileRects);
       scheduleOddRevealClear(leftoverPile.id, leftoverPile.oddRevealUntil);
 
       const leftover = puzzle.cardById[leftoverId];
@@ -1624,6 +1935,7 @@
       puzzle.dateKey = dateKey;
       puzzle.seedUsed = seedUsed;
 
+      clearSuccessCelebration();
       dayPillEl.textContent = `${formatDayPill(dayDate)} (${dateKey})`;
 
       piles = buildInitialPiles(seed);
@@ -1632,26 +1944,14 @@
       boardWrapEl.classList.remove("success");
 
       checkBtn.disabled = false;
-      setStatus("Drag letters into trios. Validation runs automatically when the board reaches 3 trios + 1 leftover.");
+      setStatus("Drag letters into trios. Auto-check runs at 3 trios + 1 leftover. Use at least 2 match-types across the trios.");
     }
 
     checkBtn.addEventListener("click", checkCurrentBoard);
 
-    resetBtn.addEventListener("click", () => {
-      if (!puzzle) return;
-      const seed = dateKeyToSeed(puzzle.dateKey);
-      piles = buildInitialPiles(seed);
-      resolveAllPileOverlaps();
-      renderBoard();
-      boardWrapEl.classList.remove("success");
-      checkBtn.disabled = false;
-      setStatus("Layout reset. Build 3 trios and leave 1 leftover.");
-    });
+    resetBtn.addEventListener("click", replayCurrentDay);
 
-    nextBtn.addEventListener("click", () => {
-      dayOffset += 1;
-      loadDay(dayOffset);
-    });
+    nextBtn.addEventListener("click", goToNextDay);
 
     debugBtn.addEventListener("click", () => {
       copyDebugSnapshot("manual_button");
@@ -1665,6 +1965,13 @@
       // Keep all clusters in bounds while preserving their size-specific layouts.
       piles.forEach(clampPilePosition);
       resolveAllPileOverlaps();
+      if (solvedToday && successCelebration) {
+        const trioPiles = piles.filter(p => p.cardIds.length === 3 && p.locked);
+        const leftoverPile = piles.find(p => p.cardIds.length === 1 && p.id === successCelebration.oddPileId);
+        if (trioPiles.length === 3 && leftoverPile) {
+          startSuccessCelebration(trioPiles, leftoverPile);
+        }
+      }
       renderBoard();
     });
 
