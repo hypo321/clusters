@@ -250,6 +250,7 @@
       width: 100%;
       height: 520px;
       z-index: 1;
+      touch-action: none;
     }
 
     .board.dragover {
@@ -412,6 +413,7 @@
       user-select: none;
       transition: box-shadow 130ms ease, border-color 130ms ease, left 220ms ease, top 220ms ease;
       text-shadow: 0 2px 4px rgba(255,255,255,0.35);
+      touch-action: none;
     }
 
     .card:hover {
@@ -427,6 +429,11 @@
     .card.dragging {
       opacity: 0.55;
       animation: none !important;
+    }
+
+    .card.touch-drag-source {
+      opacity: 0.22;
+      box-shadow: none;
     }
 
     .card.drop-target {
@@ -462,6 +469,16 @@
       pointer-events: none;
       transform: none !important;
       animation: none !important;
+    }
+
+    .touch-drag-ghost {
+      position: fixed;
+      z-index: 1002;
+      pointer-events: none;
+      margin: 0;
+      cursor: grabbing;
+      box-shadow: 0 12px 24px rgba(117,83,49,0.25);
+      opacity: 0.96;
     }
 
     .success-action {
@@ -558,6 +575,7 @@
     let draggedCardId = null;
     let draggedGrabOffsetX = 0;
     let draggedGrabOffsetY = 0;
+    let touchDragState = null;
     let boardDragDepth = 0;
     let solvedToday = false;
     let successCelebration = null;
@@ -1086,6 +1104,7 @@
       boardEl.querySelectorAll(".pile.drop-target").forEach(el => el.classList.remove("drop-target"));
       boardEl.querySelectorAll(".card.drop-target").forEach(el => el.classList.remove("drop-target"));
       boardEl.querySelectorAll(".card.swap-target").forEach(el => el.classList.remove("swap-target"));
+      boardEl.querySelectorAll(".card.touch-drag-source").forEach(el => el.classList.remove("touch-drag-source"));
     }
 
     function uniqueCardIds(ids) {
@@ -1789,6 +1808,14 @@
         e.dataTransfer.setData("text/plain", card.id);
       });
 
+      el.addEventListener("pointerdown", (e) => {
+        if (pile.locked) return;
+        if (e.pointerType === "mouse") return;
+        if (touchDragState && touchDragState.active) return;
+        e.preventDefault();
+        beginTouchDrag(card.id, e.pointerId, e.clientX, e.clientY, el);
+      });
+
       el.addEventListener("dragend", () => {
         draggedCardId = null;
         draggedGrabOffsetX = 0;
@@ -2086,12 +2113,126 @@
     }
 
     function boardEventToPoint(e) {
+      return boardPointFromClient(e.clientX, e.clientY);
+    }
+
+    function boardPointFromClient(clientX, clientY) {
       const rect = boardEl.getBoundingClientRect();
       const cardSize = getCardSize();
       return {
-        x: e.clientX - rect.left - cardSize / 2,
-        y: e.clientY - rect.top - cardSize / 2
+        x: clientX - rect.left - cardSize / 2,
+        y: clientY - rect.top - cardSize / 2
       };
+    }
+
+    function beginTouchDrag(cardId, pointerId, clientX, clientY, sourceEl) {
+      if (touchDragState || !cardId || !sourceEl) return;
+
+      const sourceRect = sourceEl.getBoundingClientRect();
+      draggedCardId = cardId;
+      draggedGrabOffsetX = clientX - sourceRect.left;
+      draggedGrabOffsetY = clientY - sourceRect.top;
+
+      const ghost = sourceEl.cloneNode(true);
+      ghost.classList.remove("dragging", "drop-target", "swap-target", "touch-drag-source");
+      ghost.classList.add("touch-drag-ghost");
+      ghost.style.left = `${sourceRect.left}px`;
+      ghost.style.top = `${sourceRect.top}px`;
+      ghost.style.width = `${sourceRect.width}px`;
+      ghost.style.height = `${sourceRect.height}px`;
+      document.body.appendChild(ghost);
+
+      sourceEl.classList.add("touch-drag-source");
+
+      touchDragState = {
+        active: true,
+        pointerId,
+        cardId,
+        ghostEl: ghost,
+        sourceEl,
+        clientX,
+        clientY,
+        intent: null
+      };
+
+      boardEl.classList.add("dragover");
+      updateTouchDrag(clientX, clientY);
+    }
+
+    function updateTouchDrag(clientX, clientY) {
+      if (!touchDragState || !touchDragState.active) return;
+      touchDragState.clientX = clientX;
+      touchDragState.clientY = clientY;
+
+      const ghost = touchDragState.ghostEl;
+      if (ghost) {
+        ghost.style.left = `${clientX - draggedGrabOffsetX}px`;
+        ghost.style.top = `${clientY - draggedGrabOffsetY}px`;
+      }
+
+      const intent = findBestDropIntent(touchDragState.cardId, clientX, clientY);
+      touchDragState.intent = intent;
+      applyDropIntentHighlight(intent);
+    }
+
+    function endTouchDrag(cancelled = false) {
+      if (!touchDragState) return;
+      const state = touchDragState;
+      touchDragState = null;
+
+      boardEl.classList.remove("dragover");
+      applyDropIntentHighlight(null);
+
+      if (state.ghostEl) state.ghostEl.remove();
+      if (state.sourceEl) state.sourceEl.classList.remove("touch-drag-source");
+
+      const cardId = state.cardId;
+      const clientX = state.clientX;
+      const clientY = state.clientY;
+      const intent = state.intent || findBestDropIntent(cardId, clientX, clientY);
+
+      draggedCardId = null;
+      draggedGrabOffsetX = 0;
+      draggedGrabOffsetY = 0;
+
+      if (cancelled || !cardId) return;
+
+      if (intent && intent.mode === "move") {
+        moveCardToPile(cardId, intent.pileId);
+        return;
+      }
+
+      if (intent && intent.mode === "swap" && intent.targetCardId) {
+        const swapped = swapCardIntoFullPile(cardId, intent.targetCardId, intent.pileId);
+        if (swapped) return;
+      }
+
+      const { x, y } = boardPointFromClient(clientX, clientY);
+      splitOrMoveToBoard(cardId, x, y);
+    }
+
+    function wireTouchDragging() {
+      window.addEventListener("pointermove", (e) => {
+        if (!touchDragState || !touchDragState.active) return;
+        if (e.pointerId !== touchDragState.pointerId) return;
+        e.preventDefault();
+        updateTouchDrag(e.clientX, e.clientY);
+      }, { passive: false });
+
+      window.addEventListener("pointerup", (e) => {
+        if (!touchDragState || !touchDragState.active) return;
+        if (e.pointerId !== touchDragState.pointerId) return;
+        e.preventDefault();
+        updateTouchDrag(e.clientX, e.clientY);
+        endTouchDrag(false);
+      }, { passive: false });
+
+      window.addEventListener("pointercancel", (e) => {
+        if (!touchDragState || !touchDragState.active) return;
+        if (e.pointerId !== touchDragState.pointerId) return;
+        e.preventDefault();
+        endTouchDrag(true);
+      }, { passive: false });
     }
 
     function wireBoardDropzone() {
@@ -2212,6 +2353,7 @@
     });
 
     wireBoardDropzone();
+    wireTouchDragging();
     window.buildDebugSnapshot = buildDebugSnapshot;
 
     (function init() {
