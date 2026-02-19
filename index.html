@@ -567,6 +567,8 @@
     const MOBILE_CARD_SIZE = 74;
     const PILE_GAP = 10;
     const DROP_HALO = 16;
+    const TOUCH_GHOST_OFFSET_X = 12;
+    const TOUCH_GHOST_OFFSET_Y = -16;
 
     let dayOffset = 0;
     let puzzle = null;
@@ -2150,10 +2152,19 @@
         cardId,
         ghostEl: ghost,
         sourceEl,
+        captureEl: sourceEl,
         clientX,
         clientY,
         intent: null
       };
+
+      if (typeof sourceEl.setPointerCapture === "function") {
+        try {
+          sourceEl.setPointerCapture(pointerId);
+        } catch {
+          // Some browsers may reject capture for non-primary pointers; continue without it.
+        }
+      }
 
       boardEl.classList.add("dragover");
       updateTouchDrag(clientX, clientY);
@@ -2166,8 +2177,8 @@
 
       const ghost = touchDragState.ghostEl;
       if (ghost) {
-        ghost.style.left = `${clientX - draggedGrabOffsetX}px`;
-        ghost.style.top = `${clientY - draggedGrabOffsetY}px`;
+        ghost.style.left = `${clientX - draggedGrabOffsetX + TOUCH_GHOST_OFFSET_X}px`;
+        ghost.style.top = `${clientY - draggedGrabOffsetY + TOUCH_GHOST_OFFSET_Y}px`;
       }
 
       const intent = findBestDropIntent(touchDragState.cardId, clientX, clientY);
@@ -2185,6 +2196,15 @@
 
       if (state.ghostEl) state.ghostEl.remove();
       if (state.sourceEl) state.sourceEl.classList.remove("touch-drag-source");
+      if (state.captureEl && typeof state.captureEl.releasePointerCapture === "function") {
+        try {
+          if (state.captureEl.hasPointerCapture?.(state.pointerId)) {
+            state.captureEl.releasePointerCapture(state.pointerId);
+          }
+        } catch {
+          // Ignore capture-release errors.
+        }
+      }
 
       const cardId = state.cardId;
       const clientX = state.clientX;
@@ -2212,6 +2232,13 @@
     }
 
     function wireTouchDragging() {
+      boardEl.addEventListener("pointermove", (e) => {
+        if (!touchDragState || !touchDragState.active) return;
+        if (e.pointerId !== touchDragState.pointerId) return;
+        e.preventDefault();
+        updateTouchDrag(e.clientX, e.clientY);
+      }, { passive: false });
+
       window.addEventListener("pointermove", (e) => {
         if (!touchDragState || !touchDragState.active) return;
         if (e.pointerId !== touchDragState.pointerId) return;
