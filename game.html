@@ -1,0 +1,1685 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Clusters</title>
+  <style>
+    :root {
+      --bg: #f4ecdd;
+      --bg2: #efdfc6;
+      --panel: #fff7ea;
+      --panel2: #f8ecd7;
+      --text: #4f3c2a;
+      --muted: #8a6f53;
+      --border: #d7c0a0;
+      --good: #78aa83;
+      --bad: #cc7568;
+      --focus: #9bb8d8;
+      --tone0: #c56d43;
+      --tone1: #4c8d76;
+      --tone2: #c89b35;
+      --tone3: #8c5f3e;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", "Trebuchet MS", sans-serif;
+      background:
+        radial-gradient(900px 620px at 10% -10%, #f8efe0 0%, transparent 62%),
+        radial-gradient(680px 520px at 95% -15%, #e9d8bc 0%, transparent 64%),
+        linear-gradient(165deg, var(--bg2) 0%, var(--bg) 72%);
+      color: var(--text);
+      min-height: 100vh;
+      letter-spacing: 0.1px;
+    }
+
+    body[data-palette="safe"] {
+      --tone0: #0072b2;
+      --tone1: #e69f00;
+      --tone2: #009e73;
+      --tone3: #cc79a7;
+    }
+
+    body.high-contrast {
+      --bg: #f7efdf;
+      --bg2: #efdfc3;
+      --panel: #fffaf1;
+      --panel2: #fff3e2;
+      --text: #2d2013;
+      --muted: #5a4026;
+      --border: #9c7b54;
+      --focus: #7ea2ca;
+    }
+
+    .topbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px 10px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 19px;
+      letter-spacing: 0.3px;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      background: rgba(255,255,255,0.04);
+      white-space: nowrap;
+    }
+
+    .layout {
+      padding: 0 18px 18px;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--panel) 0%, #fff2de 100%);
+      box-shadow: 0 10px 24px rgba(122, 82, 35, 0.15);
+      padding: 14px;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #checkBtn,
+    #debugBtn {
+      display: none;
+    }
+
+    button, select {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: linear-gradient(180deg, #fff5e8 0%, #f5e2c5 100%);
+      padding: 8px 11px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    button { cursor: pointer; }
+    button:hover, select:hover { border-color: #bc9c72; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.55);
+    }
+
+    .status {
+      margin-top: 10px;
+      border-radius: 11px;
+      border: 1px solid rgba(155,184,216,0.45);
+      background: rgba(253,248,239,0.9);
+      min-height: 44px;
+      font-size: 13px;
+      color: var(--muted);
+      padding: 10px 11px;
+      display: flex;
+      align-items: center;
+    }
+
+    .status.good {
+      border-color: rgba(120,170,131,0.45);
+      background: rgba(239,250,242,0.95);
+      color: #3f6f49;
+    }
+
+    .status.bad {
+      border-color: rgba(204,117,104,0.45);
+      background: rgba(254,242,240,0.95);
+      color: #8f453c;
+    }
+
+    .rule {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .boardWrap {
+      position: relative;
+      margin-top: 12px;
+      border-radius: 20px;
+      border: 1px dashed rgba(165,131,93,0.45);
+      background:
+        radial-gradient(560px 320px at 50% 38%, rgba(255,255,255,0.5), transparent 72%),
+        linear-gradient(180deg, var(--panel2) 0%, #f7e8d1 100%);
+      min-height: 520px;
+      overflow: hidden;
+    }
+
+    .boardWrap::after {
+      content: "";
+      position: absolute;
+      inset: -25%;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(circle, rgba(241,181,104,0.32) 0%, rgba(241,181,104,0) 62%);
+      transition: opacity 500ms ease;
+    }
+
+    .boardWrap.success::after {
+      opacity: 1;
+      animation: warmGlow 1s ease;
+    }
+
+    @keyframes warmGlow {
+      0% { transform: scale(0.85); }
+      100% { transform: scale(1.22); }
+    }
+
+    @keyframes pileShake {
+      0% { transform: translateX(0); }
+      20% { transform: translateX(-5px); }
+      40% { transform: translateX(5px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(4px); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes oddReveal {
+      0% { transform: scale(0.86); opacity: 0.7; }
+      60% { transform: scale(1.08); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    @keyframes oddPulse {
+      0% { box-shadow: 0 0 0 0 rgba(198, 109, 67, 0.38); }
+      70% { box-shadow: 0 0 0 14px rgba(198, 109, 67, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(198, 109, 67, 0); }
+    }
+
+    .board {
+      position: relative;
+      width: 100%;
+      height: 520px;
+    }
+
+    .board.dragover {
+      outline: 2px dashed rgba(129,156,191,0.55);
+      outline-offset: -10px;
+    }
+
+    .pile {
+      position: absolute;
+      display: block;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+      transform-origin: 50% 50%;
+    }
+
+    .pile.group {
+      background: rgba(255,255,255,0.24);
+      border-color: rgba(156,120,79,0.34);
+    }
+
+    .pile.drop-target {
+      border-color: rgba(129,156,191,0.7);
+      background: rgba(129,156,191,0.14);
+    }
+
+    .pile.valid {
+      border-color: rgba(120,170,131,0.78);
+      box-shadow: inset 0 0 0 1px rgba(120,170,131,0.34);
+    }
+
+    .pile.invalid {
+      border-color: rgba(204,117,104,0.85);
+      box-shadow: inset 0 0 0 1px rgba(204,117,104,0.35);
+    }
+
+    .pile.shake {
+      animation: pileShake 260ms ease;
+    }
+
+    .pile.orbit {
+      animation: orbitSpin 15s linear infinite;
+    }
+
+    .pile.orbit .card {
+      animation: counterOrbitSpin 15s linear infinite;
+    }
+
+    .pile.bonding {
+      animation: bondPulse 280ms ease;
+    }
+
+    @keyframes orbitSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes counterOrbitSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(-360deg); }
+    }
+
+    @keyframes bondPulse {
+      0% { transform: scale(0.92); }
+      50% { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
+
+    .pile.resolved {
+      opacity: 0.7;
+      filter: saturate(0.9);
+    }
+
+    .pile.odd-one {
+      border-color: rgba(198, 109, 67, 0.72);
+      background: rgba(255, 246, 232, 0.68);
+      opacity: 1;
+      filter: none;
+    }
+
+    .pile.odd-one .card {
+      box-shadow: 0 0 0 2px rgba(198, 109, 67, 0.52);
+    }
+
+    .pile.odd-reveal {
+      animation: oddReveal 430ms ease;
+    }
+
+    .pile.odd-pulse {
+      animation: oddPulse 2.2s ease-out infinite;
+    }
+
+    .card {
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      border: 1px solid rgba(150,117,83,0.4);
+      background:
+        radial-gradient(circle at 35% 30%, rgba(255,255,255,0.58) 0%, rgba(255,255,255,0.08) 46%, rgba(255,255,255,0.03) 100%),
+        linear-gradient(180deg, #fff8ed 0%, #efd9b8 100%);
+      display: grid;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      font-size: 44px;
+      font-weight: 800;
+      line-height: 1;
+      cursor: grab;
+      user-select: none;
+      transition: box-shadow 130ms ease, border-color 130ms ease, left 220ms ease, top 220ms ease;
+      text-shadow: 0 2px 4px rgba(255,255,255,0.35);
+    }
+
+    .card:hover {
+      box-shadow: 0 8px 20px rgba(117,83,49,0.2);
+      border-color: rgba(159,127,93,0.58);
+    }
+
+    .card:active {
+      cursor: grabbing;
+      box-shadow: 0 4px 12px rgba(117,83,49,0.18);
+    }
+
+    .card.dragging {
+      opacity: 0.55;
+      animation: none !important;
+    }
+
+    .card.drop-target {
+      box-shadow: 0 0 0 2px rgba(129,156,191,0.72);
+      border-color: rgba(129,156,191,0.92);
+    }
+
+    .card.swap-target {
+      box-shadow: 0 0 0 3px rgba(198, 109, 67, 0.72);
+      border-color: rgba(198, 109, 67, 0.95);
+    }
+
+    .card.font-0 { font-family: "Georgia", "Times New Roman", serif; }
+    .card.font-1 { font-family: "Trebuchet MS", "Verdana", sans-serif; }
+    .card.font-2 { font-family: "Courier New", monospace; }
+    .card.font-3 { font-family: "Gill Sans", "Franklin Gothic Medium", sans-serif; }
+
+    .card[data-color="0"] { color: var(--tone0); }
+    .card[data-color="1"] { color: var(--tone1); }
+    .card[data-color="2"] { color: var(--tone2); }
+    .card[data-color="3"] { color: var(--tone3); }
+
+    .fxCard {
+      position: fixed;
+      z-index: 1000;
+      pointer-events: none;
+      transition: all 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    @media (max-width: 1020px) {
+      .board, .boardWrap { min-height: 460px; height: 460px; }
+      .card { width: 74px; height: 74px; font-size: 38px; }
+    }
+  </style>
+</head>
+<body data-palette="standard">
+  <header class="topbar">
+    <div>
+      <h1 class="title">Clusters</h1>
+      <div class="subtitle">Cluster 10 letters into 3 tiny constellations and leave one odd letter.</div>
+    </div>
+    <div class="pill" id="dayPill">Today</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <div class="row">
+        <div class="controls">
+          <button id="checkBtn">Check</button>
+          <button id="resetBtn">Reset Layout</button>
+          <button id="nextBtn">Next Day</button>
+          <button id="debugBtn" title="Copy current game state JSON to clipboard">Debug: Copy State</button>
+        </div>
+        <div class="controls">
+          <select id="paletteSelect" aria-label="Palette mode">
+            <option value="standard">Standard palette</option>
+            <option value="safe">Colour-blind safe</option>
+          </select>
+          <label class="toggle">
+            <input type="checkbox" id="highlightErrorsToggle" />
+            Highlight errors
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="contrastToggle" />
+            High contrast
+          </label>
+        </div>
+      </div>
+
+      <div class="status" id="status">Build 3 trios. A trio works if all 3 share letter, font, or colour.</div>
+      <div class="rule">Tip: drop a letter on empty space to pull it back out of a cluster.</div>
+
+      <div class="boardWrap" id="boardWrap">
+        <div class="board" id="board" aria-label="Puzzle board"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const SETTINGS_KEY = "letter_group_settings_v1";
+
+    const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
+    const DESKTOP_CARD_SIZE = 84;
+    const MOBILE_CARD_SIZE = 74;
+    const PILE_GAP = 10;
+
+    let dayOffset = 0;
+    let puzzle = null;
+    let piles = [];
+    let nextPileId = 1;
+    let draggedCardId = null;
+    let boardDragDepth = 0;
+    let solvedToday = false;
+
+    const boardEl = document.getElementById("board");
+    const boardWrapEl = document.getElementById("boardWrap");
+    const statusEl = document.getElementById("status");
+    const dayPillEl = document.getElementById("dayPill");
+
+    const checkBtn = document.getElementById("checkBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const debugBtn = document.getElementById("debugBtn");
+    const paletteSelect = document.getElementById("paletteSelect");
+    const highlightErrorsToggle = document.getElementById("highlightErrorsToggle");
+    const contrastToggle = document.getElementById("contrastToggle");
+
+    function setStatus(message, kind = "") {
+      statusEl.classList.remove("good", "bad");
+      if (kind) statusEl.classList.add(kind);
+      statusEl.textContent = message;
+    }
+
+    function loadSettings() {
+      try {
+        return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function saveSettings(settings) {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    function localDateForOffset(offset) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + offset);
+      return d;
+    }
+
+    function formatDateKey(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function dateKeyToSeed(dateKey) {
+      return Number(dateKey.replaceAll("-", ""));
+    }
+
+    function formatDayPill(date) {
+      return new Intl.DateTimeFormat(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric"
+      }).format(date);
+    }
+
+    function mulberry32(seed) {
+      let t = seed >>> 0;
+      return function rng() {
+        t += 0x6d2b79f5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function shuffle(array, rng) {
+      const items = [...array];
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+      return items;
+    }
+
+    function countUnique(values) {
+      return new Set(values).size;
+    }
+
+    function getCardSize() {
+      return window.matchMedia("(max-width: 1020px)").matches ? MOBILE_CARD_SIZE : DESKTOP_CARD_SIZE;
+    }
+
+    function trioSameAttributes(trioCards) {
+      if (trioCards.length !== 3) return [];
+
+      const attrs = [];
+      if (countUnique(trioCards.map(c => c.letter)) === 1) attrs.push("letter");
+      if (countUnique(trioCards.map(c => c.color)) === 1) attrs.push("color");
+      if (countUnique(trioCards.map(c => c.font)) === 1) attrs.push("font");
+      return attrs;
+    }
+
+    function solvePuzzle(cards) {
+      const byId = Object.fromEntries(cards.map(c => [c.id, c]));
+      const ids = cards.map(c => c.id).sort();
+      const validTrios = [];
+
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          for (let k = j + 1; k < ids.length; k++) {
+            const trio = [ids[i], ids[j], ids[k]];
+            const sameAttrs = trioSameAttributes(trio.map(id => byId[id]));
+            if (sameAttrs.length >= 1) {
+              validTrios.push({
+                ids: trio,
+                signature: trio.join("|")
+              });
+            }
+          }
+        }
+      }
+
+      const triosByCard = new Map(ids.map(id => [id, []]));
+      for (const trio of validTrios) {
+        for (const id of trio.ids) {
+          triosByCard.get(id).push(trio);
+        }
+      }
+
+      const solutions = [];
+
+      function search(remainingSet, chosenTrios) {
+        if (remainingSet.size === 0) {
+          return [chosenTrios];
+        }
+
+        const anchor = [...remainingSet].sort()[0];
+        const candidates = triosByCard.get(anchor) || [];
+        const results = [];
+
+        for (const trio of candidates) {
+          if (!trio.ids.every(id => remainingSet.has(id))) continue;
+
+          const nextRemaining = new Set(remainingSet);
+          trio.ids.forEach(id => nextRemaining.delete(id));
+          const completions = search(nextRemaining, [...chosenTrios, trio]);
+          results.push(...completions);
+        }
+
+        return results;
+      }
+
+      for (const leftoverId of ids) {
+        const remaining = ids.filter(id => id !== leftoverId);
+        const partitions = search(new Set(remaining), []);
+
+        for (const trioSet of partitions) {
+          const groups = trioSet.map(t => t.ids);
+          const signature = groups
+            .map(g => [...g].sort().join("|"))
+            .sort()
+            .join(" || ");
+
+          solutions.push({ leftoverId, groups, signature });
+        }
+      }
+
+      const dedup = new Map();
+      for (const sol of solutions) {
+        const key = `${sol.leftoverId}::${sol.signature}`;
+        if (!dedup.has(key)) dedup.set(key, sol);
+      }
+
+      return [...dedup.values()];
+    }
+
+    function generatePuzzle(seed) {
+      for (let attempt = 0; attempt < 1200; attempt++) {
+        const rng = mulberry32(seed + attempt * 11939);
+        const biasedForLetterTrio = rng() < 0.35;
+
+        let letters;
+        if (biasedForLetterTrio) {
+          // Occasional bias: some days include a natural-looking repeated-letter trio.
+          const repeatedLetter = LETTERS[Math.floor(rng() * LETTERS.length)];
+          const letterBag = [repeatedLetter, repeatedLetter, repeatedLetter];
+          for (let i = 0; i < 7; i++) {
+            letterBag.push(LETTERS[Math.floor(rng() * LETTERS.length)]);
+          }
+          letters = shuffle(letterBag, rng);
+        } else {
+          letters = Array.from({ length: 10 }, () => LETTERS[Math.floor(rng() * LETTERS.length)]);
+        }
+
+        const cards = letters.map((letter, idx) => ({
+          id: `c${idx}`,
+          letter,
+          color: Math.floor(rng() * 4),
+          font: Math.floor(rng() * 4)
+        }));
+
+        // Keep boards varied and readable.
+        if (new Set(cards.map(c => c.letter)).size < 5) continue;
+        if (new Set(cards.map(c => c.color)).size < 3) continue;
+        if (new Set(cards.map(c => c.font)).size < 3) continue;
+
+        const solutions = solvePuzzle(cards);
+        if (solutions.length === 0) continue;
+        if (solutions.length > 140) continue;
+
+        const cardById = Object.fromEntries(cards.map(c => [c.id, c]));
+        const leftovers = new Set(solutions.map(s => s.leftoverId));
+        if (leftovers.size !== 1) continue;
+
+        return {
+          cards,
+          cardById,
+          solutions,
+          forcedLeftoverId: [...leftovers][0]
+        };
+      }
+
+      throw new Error("Unable to generate a fair puzzle for this day seed.");
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function findSpreadPositions(count, width, height, rng) {
+      const points = [];
+      const cardSize = getCardSize();
+      const margin = 16;
+      const maxX = Math.max(margin, width - cardSize - margin);
+      const maxY = Math.max(margin, height - cardSize - margin);
+      const samples = 140;
+
+      for (let i = 0; i < count; i++) {
+        let best = null;
+        let bestScore = -Infinity;
+
+        for (let s = 0; s < samples; s++) {
+          const x = margin + rng() * Math.max(1, maxX - margin);
+          const y = margin + rng() * Math.max(1, maxY - margin);
+
+          let nearest = Infinity;
+          for (const p of points) {
+            const d = Math.hypot(p.x - x, p.y - y);
+            if (d < nearest) nearest = d;
+          }
+
+          const centerX = width / 2;
+          const centerY = height / 2;
+          const centerBias = Math.hypot((x + cardSize / 2) - centerX, (y + cardSize / 2) - centerY) * 0.04;
+          const score = (points.length === 0 ? 0 : nearest) - centerBias;
+
+          if (score > bestScore) {
+            bestScore = score;
+            best = { x, y };
+          }
+        }
+
+        points.push(best || { x: margin, y: margin });
+      }
+
+      return points;
+    }
+
+    function getPileLayout(cardCount) {
+      const cardSize = getCardSize();
+      const radius = cardSize / 2;
+      let centers = [{ x: 0, y: 0 }];
+
+      if (cardCount === 2) {
+        const spacing = cardSize * 0.78;
+        centers = [
+          { x: -spacing / 2, y: 0 },
+          { x: spacing / 2, y: 0 }
+        ];
+      } else if (cardCount === 3) {
+        const side = cardSize * 0.95;
+        const h = side * Math.sqrt(3) / 2;
+        const centroidToBase = h / 3;
+        centers = [
+          { x: -side / 2, y: centroidToBase },
+          { x: side / 2, y: centroidToBase },
+          { x: 0, y: centroidToBase - h }
+        ];
+      }
+
+      if (cardCount <= 1) {
+        return {
+          width: cardSize,
+          height: cardSize,
+          positions: [{ x: 0, y: 0 }]
+        };
+      }
+
+      // Use an enclosing circle around card centers so connected-group borders stay circular.
+      const centroid = centers.reduce((acc, c) => ({
+        x: acc.x + c.x / centers.length,
+        y: acc.y + c.y / centers.length
+      }), { x: 0, y: 0 });
+      const padding = Math.max(6, cardSize * 0.12);
+      const enclosingRadius = Math.max(
+        ...centers.map(c => Math.hypot(c.x - centroid.x, c.y - centroid.y) + radius)
+      ) + padding;
+
+      return {
+        width: enclosingRadius * 2,
+        height: enclosingRadius * 2,
+        positions: centers.map(c => ({
+          x: c.x - centroid.x - radius + enclosingRadius,
+          y: c.y - centroid.y - radius + enclosingRadius
+        }))
+      };
+    }
+
+    function clampPilePosition(pile) {
+      const layout = getPileLayout(pile.cardIds.length || 1);
+      const maxX = Math.max(10, (boardEl.clientWidth || 900) - layout.width - 10);
+      const maxY = Math.max(10, (boardEl.clientHeight || 520) - layout.height - 10);
+      pile.x = clamp(pile.x, 10, maxX);
+      pile.y = clamp(pile.y, 10, maxY);
+    }
+
+    function recenterPileAfterResize(pile, prevCount) {
+      if (!pile || prevCount <= 0 || pile.cardIds.length <= 0) return;
+      const before = getPileLayout(prevCount);
+      const after = getPileLayout(pile.cardIds.length);
+      pile.x += (before.width - after.width) / 2;
+      pile.y += (before.height - after.height) / 2;
+      clampPilePosition(pile);
+    }
+
+    function getPileCircle(pile) {
+      const layout = getPileLayout(pile.cardIds.length || 1);
+      return {
+        cx: pile.x + layout.width / 2,
+        cy: pile.y + layout.height / 2,
+        r: Math.max(layout.width, layout.height) / 2
+      };
+    }
+
+    function overlapPenalty(pile, ignoreIds = new Set()) {
+      const a = getPileCircle(pile);
+      let penalty = 0;
+
+      for (const other of piles) {
+        if (other.id === pile.id) continue;
+        if (ignoreIds.has(other.id)) continue;
+        const b = getPileCircle(other);
+        const d = Math.hypot(a.cx - b.cx, a.cy - b.cy);
+        const minDist = a.r + b.r + PILE_GAP;
+        if (d < minDist) penalty += (minDist - d);
+      }
+
+      return penalty;
+    }
+
+    function placePileNearWithoutOverlap(pile, preferredX, preferredY, ignoreIds = new Set()) {
+      const startX = preferredX ?? pile.x;
+      const startY = preferredY ?? pile.y;
+
+      pile.x = startX;
+      pile.y = startY;
+      clampPilePosition(pile);
+
+      if (overlapPenalty(pile, ignoreIds) <= 0) return;
+
+      const radialStep = getCardSize() * 0.34;
+      const angleStep = Math.PI / 10;
+      const maxRing = 24;
+      let best = { x: pile.x, y: pile.y, score: overlapPenalty(pile, ignoreIds) };
+
+      for (let ring = 1; ring <= maxRing; ring++) {
+        const radius = radialStep * ring;
+        for (let angle = 0; angle < Math.PI * 2; angle += angleStep) {
+          pile.x = startX + Math.cos(angle) * radius;
+          pile.y = startY + Math.sin(angle) * radius;
+          clampPilePosition(pile);
+
+          const score = overlapPenalty(pile, ignoreIds);
+          if (score < best.score) best = { x: pile.x, y: pile.y, score };
+          if (score <= 0) return;
+        }
+      }
+
+      pile.x = best.x;
+      pile.y = best.y;
+    }
+
+    function resolveAllPileOverlaps(priorityPileIds = []) {
+      const ordered = [];
+      const seen = new Set();
+
+      for (const id of priorityPileIds) {
+        const p = piles.find(x => x.id === id);
+        if (!p) continue;
+        ordered.push(p);
+        seen.add(p.id);
+      }
+
+      for (const pile of piles) {
+        if (seen.has(pile.id)) continue;
+        ordered.push(pile);
+      }
+
+      for (let pass = 0; pass < 3; pass++) {
+        for (const pile of ordered) {
+          placePileNearWithoutOverlap(pile, pile.x, pile.y);
+        }
+      }
+    }
+
+    function resetValidationMarkers() {
+      piles.forEach(p => { p.validState = null; });
+    }
+
+    function buildInitialPiles(seed) {
+      const width = boardEl.clientWidth || 900;
+      const height = boardEl.clientHeight || 470;
+      const rng = mulberry32(seed ^ 0x9e3779b9);
+      const points = findSpreadPositions(puzzle.cards.length, width, height, rng);
+
+      nextPileId = 1;
+      solvedToday = false;
+
+      return puzzle.cards.map((card, idx) => ({
+        id: `p${nextPileId++}`,
+        cardIds: [card.id],
+        x: points[idx].x,
+        y: points[idx].y,
+        validState: null,
+        locked: false,
+        shakeUntil: 0,
+        bondUntil: 0,
+        oddOne: false,
+        oddRevealUntil: 0
+      }));
+    }
+
+    function setBoardSuccessGlow() {
+      boardWrapEl.classList.remove("success");
+      void boardWrapEl.offsetWidth;
+      boardWrapEl.classList.add("success");
+    }
+
+    function scheduleOddRevealClear(pileId, oddRevealUntil) {
+      window.setTimeout(() => {
+        const pile = piles.find(p => p.id === pileId);
+        if (!pile) return;
+        if (pile.oddRevealUntil === oddRevealUntil) {
+          pile.oddRevealUntil = 0;
+          renderBoard();
+        }
+      }, 520);
+    }
+
+    function removePileIfEmpty(pileId) {
+      piles = piles.filter(p => !(p.id === pileId && p.cardIds.length === 0));
+    }
+
+    function getPileByCard(cardId) {
+      return piles.find(p => p.cardIds.includes(cardId));
+    }
+
+    function clearDropHighlights() {
+      boardEl.classList.remove("dragover");
+      boardEl.querySelectorAll(".pile.drop-target").forEach(el => el.classList.remove("drop-target"));
+      boardEl.querySelectorAll(".card.drop-target").forEach(el => el.classList.remove("drop-target"));
+      boardEl.querySelectorAll(".card.swap-target").forEach(el => el.classList.remove("swap-target"));
+    }
+
+    function uniqueCardIds(ids) {
+      return [...new Set(ids.filter(Boolean))];
+    }
+
+    function captureCardRects(cardIds) {
+      const rects = new Map();
+      for (const id of uniqueCardIds(cardIds)) {
+        const el = boardEl.querySelector(`.card[data-card-id="${id}"]`);
+        if (!el) continue;
+        rects.set(id, el.getBoundingClientRect());
+      }
+      return rects;
+    }
+
+    function animateMovedCards(cardIds, beforeRects) {
+      const durationMs = 240;
+      for (const id of uniqueCardIds(cardIds)) {
+        const from = beforeRects.get(id);
+        if (!from) continue;
+
+        const toEl = boardEl.querySelector(`.card[data-card-id="${id}"]`);
+        if (!toEl) continue;
+        const to = toEl.getBoundingClientRect();
+
+        const travel = Math.hypot(to.left - from.left, to.top - from.top);
+        if (travel < 1.5) continue;
+
+        const ghost = toEl.cloneNode(true);
+        ghost.classList.add("fxCard");
+        ghost.style.left = `${from.left}px`;
+        ghost.style.top = `${from.top}px`;
+        ghost.style.width = `${from.width}px`;
+        ghost.style.height = `${from.height}px`;
+        ghost.style.margin = "0";
+        ghost.style.transition = `left ${durationMs}ms cubic-bezier(0.2, 0.85, 0.25, 1), top ${durationMs}ms cubic-bezier(0.2, 0.85, 0.25, 1), opacity ${durationMs}ms ease`;
+        ghost.style.boxShadow = "0 10px 20px rgba(117,83,49,0.25)";
+        document.body.appendChild(ghost);
+
+        requestAnimationFrame(() => {
+          ghost.style.left = `${to.left}px`;
+          ghost.style.top = `${to.top}px`;
+          ghost.style.opacity = "0.55";
+        });
+
+        const cleanup = () => {
+          ghost.removeEventListener("transitionend", cleanup);
+          ghost.remove();
+        };
+
+        ghost.addEventListener("transitionend", cleanup);
+        window.setTimeout(cleanup, durationMs + 60);
+      }
+    }
+
+    function schedulePileShakeClear(pileId, shakeUntil) {
+      window.setTimeout(() => {
+        const pile = piles.find(p => p.id === pileId);
+        if (!pile) return;
+        if (pile.shakeUntil === shakeUntil) {
+          pile.shakeUntil = 0;
+          renderBoard();
+        }
+      }, 320);
+    }
+
+    function schedulePileBondClear(pileId, bondUntil) {
+      window.setTimeout(() => {
+        const pile = piles.find(p => p.id === pileId);
+        if (!pile) return;
+        if (pile.bondUntil === bondUntil) {
+          pile.bondUntil = 0;
+          renderBoard();
+        }
+      }, 320);
+    }
+
+    function maybeAutoCheck() {
+      if (solvedToday) return;
+      checkCurrentBoard({ auto: true });
+    }
+
+    function canDropIntoPile(targetPile, cardId) {
+      if (!targetPile || !cardId) return false;
+      if (targetPile.locked) return false;
+      if (targetPile.cardIds.includes(cardId)) return false;
+      if (targetPile.cardIds.length >= 3) return false;
+      return true;
+    }
+
+    function moveCardToPile(cardId, targetPileId) {
+      const sourcePile = getPileByCard(cardId);
+      const targetPile = piles.find(p => p.id === targetPileId);
+      if (!sourcePile || !targetPile || sourcePile.id === targetPile.id) return;
+
+      const impactedCardIds = uniqueCardIds([...sourcePile.cardIds, ...targetPile.cardIds]);
+      const beforeRects = captureCardRects(impactedCardIds);
+      const sourceCountBefore = sourcePile.cardIds.length;
+      const targetCountBefore = targetPile.cardIds.length;
+
+      sourcePile.cardIds = sourcePile.cardIds.filter(id => id !== cardId);
+      targetPile.cardIds.push(cardId);
+      recenterPileAfterResize(targetPile, targetCountBefore);
+      recenterPileAfterResize(sourcePile, sourceCountBefore);
+      resolveAllPileOverlaps([targetPile.id, sourcePile.id]);
+
+      let shakeUntil = 0;
+      if (highlightErrorsToggle.checked && targetPile.cardIds.length === 3) {
+        const cards = targetPile.cardIds.map(id => puzzle.cardById[id]);
+        if (trioSameAttributes(cards).length === 0) {
+          shakeUntil = Date.now() + 320;
+          targetPile.shakeUntil = shakeUntil;
+        }
+      }
+
+      let bondUntil = 0;
+      if (targetPile.cardIds.length >= 2) {
+        bondUntil = Date.now() + 320;
+        targetPile.bondUntil = bondUntil;
+      }
+
+      removePileIfEmpty(sourcePile.id);
+      resetValidationMarkers();
+      renderBoard();
+      animateMovedCards(impactedCardIds, beforeRects);
+      if (shakeUntil) schedulePileShakeClear(targetPile.id, shakeUntil);
+      if (bondUntil) schedulePileBondClear(targetPile.id, bondUntil);
+      maybeAutoCheck();
+    }
+
+    function swapCardIntoFullPile(draggedCardId, targetCardId, targetPileId) {
+      const sourcePile = getPileByCard(draggedCardId);
+      const targetPile = piles.find(p => p.id === targetPileId);
+      if (!sourcePile || !targetPile || sourcePile.id === targetPile.id) return false;
+      if (targetPile.locked) return false;
+      if (!targetPile.cardIds.includes(targetCardId)) return false;
+      if (!sourcePile.cardIds.includes(draggedCardId)) return false;
+      if (targetPile.cardIds.length !== 3) return false;
+
+      const sourceIdx = sourcePile.cardIds.indexOf(draggedCardId);
+      const targetIdx = targetPile.cardIds.indexOf(targetCardId);
+      if (sourceIdx < 0 || targetIdx < 0) return false;
+
+      const impactedCardIds = [draggedCardId, targetCardId];
+      const beforeRects = captureCardRects(impactedCardIds);
+      sourcePile.cardIds[sourceIdx] = targetCardId;
+      targetPile.cardIds[targetIdx] = draggedCardId;
+
+      resetValidationMarkers();
+      renderBoard();
+      animateMovedCards(impactedCardIds, beforeRects);
+      maybeAutoCheck();
+      return true;
+    }
+
+    function canSwapWithCard(draggedCardId, targetCardId, targetPile) {
+      if (!draggedCardId || !targetCardId || !targetPile) return false;
+      if (targetPile.locked) return false;
+      if (draggedCardId === targetCardId) return false;
+      if (targetPile.cardIds.length !== 3) return false;
+      if (!targetPile.cardIds.includes(targetCardId)) return false;
+
+      const sourcePile = getPileByCard(draggedCardId);
+      if (!sourcePile) return false;
+      if (sourcePile.id === targetPile.id) return false;
+      return true;
+    }
+
+    function splitOrMoveToBoard(cardId, x, y) {
+      const sourcePile = getPileByCard(cardId);
+      if (!sourcePile || sourcePile.locked) return;
+
+      const impactedCardIds = [...sourcePile.cardIds];
+      const beforeRects = captureCardRects(impactedCardIds);
+
+      if (sourcePile.cardIds.length === 1) {
+        sourcePile.x = x;
+        sourcePile.y = y;
+        clampPilePosition(sourcePile);
+        placePileNearWithoutOverlap(sourcePile, sourcePile.x, sourcePile.y);
+      } else {
+        const sourceCountBefore = sourcePile.cardIds.length;
+        sourcePile.cardIds = sourcePile.cardIds.filter(id => id !== cardId);
+        recenterPileAfterResize(sourcePile, sourceCountBefore);
+
+        const newPile = {
+          id: `p${nextPileId++}`,
+          cardIds: [cardId],
+          x,
+          y,
+          validState: null,
+          locked: false,
+          shakeUntil: 0,
+          bondUntil: 0,
+          oddOne: false,
+          oddRevealUntil: 0
+        };
+        clampPilePosition(newPile);
+        piles.push(newPile);
+        resolveAllPileOverlaps([newPile.id, sourcePile.id]);
+        removePileIfEmpty(sourcePile.id);
+      }
+
+      resetValidationMarkers();
+      renderBoard();
+      animateMovedCards(impactedCardIds, beforeRects);
+      maybeAutoCheck();
+    }
+
+    function cardDisplayText(card) {
+      return card.letter;
+    }
+
+    function currentStatusKind() {
+      if (statusEl.classList.contains("good")) return "good";
+      if (statusEl.classList.contains("bad")) return "bad";
+      return "neutral";
+    }
+
+    function analyzeCurrentArrangement() {
+      const trioPiles = piles.filter(p => p.cardIds.length === 3);
+      const singletonPiles = piles.filter(p => p.cardIds.length === 1);
+      const oddPiles = piles.filter(p => p.cardIds.length !== 1 && p.cardIds.length !== 3);
+
+      const trioDetails = trioPiles.map(pile => {
+        const cards = pile.cardIds.map(id => puzzle.cardById[id]);
+        const sameAttrs = trioSameAttributes(cards);
+        return {
+          pileId: pile.id,
+          cardIds: [...pile.cardIds],
+          letters: cards.map(cardDisplayText),
+          sameAttrs,
+          locallyValid: sameAttrs.length >= 1
+        };
+      });
+
+      const leftoverId = singletonPiles.length === 1 ? singletonPiles[0].cardIds[0] : null;
+      const playerSignature = trioPiles.length === 3
+        ? trioPiles.map(p => [...p.cardIds].sort().join("|")).sort().join(" || ")
+        : null;
+
+      const matchingSolutions = (leftoverId && playerSignature)
+        ? puzzle.solutions.filter(sol => sol.leftoverId === leftoverId && sol.signature === playerSignature)
+        : [];
+
+      return {
+        trioCount: trioPiles.length,
+        singletonCount: singletonPiles.length,
+        oddPileCount: oddPiles.length,
+        trioDetails,
+        leftoverId,
+        leftoverLetter: leftoverId ? cardDisplayText(puzzle.cardById[leftoverId]) : null,
+        playerSignature,
+        matchesDailySolution: matchingSolutions.length > 0,
+        matchingSolutionCount: matchingSolutions.length,
+        forcedLeftoverId: puzzle.forcedLeftoverId,
+        forcedLeftoverLetter: cardDisplayText(puzzle.cardById[puzzle.forcedLeftoverId])
+      };
+    }
+
+    function buildDebugSnapshot(reason = "manual") {
+      if (!puzzle) {
+        return {
+          debugVersion: 1,
+          reason,
+          capturedAt: new Date().toISOString(),
+          settings: {
+            palette: paletteSelect.value,
+            highContrast: contrastToggle.checked,
+            highlightErrors: highlightErrorsToggle.checked
+          },
+          error: "No puzzle is currently loaded."
+        };
+      }
+
+      const cards = puzzle.cards.map(card => ({
+        id: card.id,
+        letter: card.letter,
+        display: cardDisplayText(card),
+        color: card.color,
+        font: card.font
+      }));
+
+      const analysis = analyzeCurrentArrangement();
+      const solutionDetails = puzzle.solutions.map(sol => ({
+        leftoverId: sol.leftoverId,
+        leftoverLetter: cardDisplayText(puzzle.cardById[sol.leftoverId]),
+        signature: sol.signature,
+        groups: sol.groups.map(groupIds => groupIds.map(id => cardDisplayText(puzzle.cardById[id])))
+      }));
+
+      return {
+        debugVersion: 1,
+        reason,
+        capturedAt: new Date().toISOString(),
+        settings: {
+          palette: paletteSelect.value,
+          highContrast: contrastToggle.checked,
+          highlightErrors: highlightErrorsToggle.checked
+        },
+        status: {
+          message: statusEl.textContent,
+          kind: currentStatusKind()
+        },
+        day: {
+          dayOffset,
+          dateKey: puzzle.dateKey,
+          seedUsed: puzzle.seedUsed ?? null
+        },
+        puzzle: {
+          forcedLeftoverId: puzzle.forcedLeftoverId,
+          forcedLeftoverLetter: cardDisplayText(puzzle.cardById[puzzle.forcedLeftoverId]),
+          cardCount: cards.length,
+          cards,
+          solutionCount: puzzle.solutions.length,
+          solutions: solutionDetails
+        },
+        board: {
+          solvedToday,
+          piles: piles.map(pile => ({
+            id: pile.id,
+            cardIds: [...pile.cardIds],
+            letters: pile.cardIds.map(id => cardDisplayText(puzzle.cardById[id])),
+            x: pile.x,
+            y: pile.y,
+            locked: pile.locked,
+            validState: pile.validState
+          })),
+          analysis
+        }
+      };
+    }
+
+    async function copyDebugSnapshot(reason = "manual") {
+      const text = JSON.stringify(buildDebugSnapshot(reason), null, 2);
+      let copied = false;
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        } catch {
+          copied = false;
+        }
+      }
+
+      if (!copied) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+
+        try {
+          copied = document.execCommand("copy");
+        } catch {
+          copied = false;
+        }
+
+        textarea.remove();
+      }
+
+      if (copied) {
+        setStatus("Debug snapshot copied to clipboard. Paste it here and I can trace the exact validator path.", "good");
+      } else {
+        setStatus("Couldn't copy automatically. In console run: copy(JSON.stringify(buildDebugSnapshot(), null, 2))", "bad");
+      }
+    }
+
+    function createCardElement(card, pile) {
+      const el = document.createElement("div");
+      el.className = `card font-${card.font}`;
+      el.dataset.cardId = card.id;
+      el.dataset.pileId = pile.id;
+      el.dataset.color = String(card.color);
+      el.textContent = cardDisplayText(card);
+      el.draggable = !pile.locked;
+
+      el.addEventListener("dragstart", (e) => {
+        if (pile.locked) {
+          e.preventDefault();
+          return;
+        }
+
+        draggedCardId = card.id;
+        el.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", card.id);
+      });
+
+      el.addEventListener("dragend", () => {
+        draggedCardId = null;
+        boardDragDepth = 0;
+        clearDropHighlights();
+        el.classList.remove("dragging");
+      });
+
+      el.addEventListener("dragenter", (e) => {
+        if (!draggedCardId || draggedCardId === card.id) return;
+        const targetPile = piles.find(p => p.id === pile.id);
+        if (canDropIntoPile(targetPile, draggedCardId)) {
+          e.preventDefault();
+          // When adding a 3rd tile to a pair, highlight only the group ring (handled on pile).
+          if (targetPile.cardIds.length === 1) {
+            el.classList.add("drop-target");
+          } else {
+            el.classList.remove("drop-target");
+          }
+          return;
+        }
+        if (canSwapWithCard(draggedCardId, card.id, targetPile)) {
+          e.preventDefault();
+          el.classList.add("swap-target");
+        }
+      });
+
+      el.addEventListener("dragleave", () => {
+        el.classList.remove("drop-target");
+        el.classList.remove("swap-target");
+      });
+
+      el.addEventListener("dragover", (e) => {
+        const targetPile = piles.find(p => p.id === pile.id);
+        if (canDropIntoPile(targetPile, draggedCardId)) {
+          e.preventDefault();
+          if (targetPile.cardIds.length === 1) {
+            el.classList.add("drop-target");
+          } else {
+            el.classList.remove("drop-target");
+          }
+          return;
+        }
+        if (canSwapWithCard(draggedCardId, card.id, targetPile)) {
+          e.preventDefault();
+          el.classList.add("swap-target");
+        }
+      });
+
+      el.addEventListener("drop", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        el.classList.remove("drop-target");
+        el.classList.remove("swap-target");
+
+        if (!draggedCardId || draggedCardId === card.id) return;
+
+        const targetPile = piles.find(p => p.id === pile.id);
+        if (!canDropIntoPile(targetPile, draggedCardId)) {
+          if (targetPile && targetPile.cardIds.length === 3) {
+            const swapped = swapCardIntoFullPile(draggedCardId, card.id, targetPile.id);
+            if (swapped) return;
+            setStatus("Drop directly onto a tile in that trio to swap.", "bad");
+          }
+          return;
+        }
+
+        moveCardToPile(draggedCardId, targetPile.id);
+      });
+
+      return el;
+    }
+
+    function renderBoard() {
+      boardEl.innerHTML = "";
+      const highlightErrors = !!highlightErrorsToggle.checked;
+
+      for (const pile of piles) {
+        const pileCards = pile.cardIds.map(id => puzzle.cardById[id]);
+        const previewInvalid = highlightErrors &&
+          pile.cardIds.length === 3 &&
+          trioSameAttributes(pileCards).length === 0;
+        const layout = getPileLayout(pile.cardIds.length);
+
+        const pileEl = document.createElement("div");
+        pileEl.className = "pile";
+        if (pile.cardIds.length > 1) pileEl.classList.add("group");
+        if (pile.cardIds.length > 1 && !pile.locked) pileEl.classList.add("orbit");
+        if (pile.validState === true) pileEl.classList.add("valid");
+        if ((pile.validState === false && highlightErrors) || previewInvalid) pileEl.classList.add("invalid");
+        if (highlightErrors && pile.shakeUntil && pile.shakeUntil > Date.now()) pileEl.classList.add("shake");
+        if (pile.bondUntil && pile.bondUntil > Date.now()) pileEl.classList.add("bonding");
+        if (pile.oddOne) pileEl.classList.add("odd-one", "odd-pulse");
+        if (pile.oddRevealUntil && pile.oddRevealUntil > Date.now()) pileEl.classList.add("odd-reveal");
+        if (pile.locked) pileEl.classList.add("resolved");
+
+        pileEl.dataset.pileId = pile.id;
+        pileEl.style.left = `${pile.x}px`;
+        pileEl.style.top = `${pile.y}px`;
+        pileEl.style.width = `${layout.width}px`;
+        pileEl.style.height = `${layout.height}px`;
+
+        pileEl.addEventListener("dragenter", (e) => {
+          if (!draggedCardId) return;
+          const targetPile = piles.find(p => p.id === pile.id);
+          if (canDropIntoPile(targetPile, draggedCardId)) {
+            e.preventDefault();
+            pileEl.classList.add("drop-target");
+          }
+        });
+
+        pileEl.addEventListener("dragover", (e) => {
+          const targetPile = piles.find(p => p.id === pile.id);
+          if (canDropIntoPile(targetPile, draggedCardId)) {
+            e.preventDefault();
+            pileEl.classList.add("drop-target");
+          }
+        });
+
+        pileEl.addEventListener("dragleave", () => {
+          pileEl.classList.remove("drop-target");
+        });
+
+        pileEl.addEventListener("drop", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          pileEl.classList.remove("drop-target");
+
+          const targetPile = piles.find(p => p.id === pile.id);
+          if (!canDropIntoPile(targetPile, draggedCardId)) {
+            if (targetPile && targetPile.cardIds.length >= 3) {
+              setStatus("Groups can only hold 3 cards.", "bad");
+            }
+            return;
+          }
+
+          moveCardToPile(draggedCardId, targetPile.id);
+        });
+
+        pile.cardIds.forEach((id, idx) => {
+          const card = puzzle.cardById[id];
+          const cardEl = createCardElement(card, pile);
+          cardEl.style.left = `${layout.positions[idx].x}px`;
+          cardEl.style.top = `${layout.positions[idx].y}px`;
+          pileEl.appendChild(cardEl);
+        });
+
+        boardEl.appendChild(pileEl);
+      }
+    }
+
+    function checkCurrentBoard(options = {}) {
+      const auto = options.auto === true;
+
+      if (solvedToday) {
+        setStatus("This day is already solved. Move to the next day when ready.", "good");
+        return;
+      }
+
+      resetValidationMarkers();
+
+      const trioPiles = piles.filter(p => p.cardIds.length === 3);
+      const singletonPiles = piles.filter(p => p.cardIds.length === 1);
+      const oddPiles = piles.filter(p => p.cardIds.length !== 1 && p.cardIds.length !== 3);
+
+      if (trioPiles.length !== 3 || singletonPiles.length !== 1 || oddPiles.length > 0) {
+        if (auto) {
+          setStatus("Keep grouping cards into 3 trios with 1 leftover.");
+        } else {
+          setStatus("Need exactly 3 groups of 3 cards and 1 leftover card.", "bad");
+        }
+        renderBoard();
+        return;
+      }
+
+      const trioEvaluations = trioPiles.map(pile => {
+        const cards = pile.cardIds.map(id => puzzle.cardById[id]);
+        const sameAttrs = trioSameAttributes(cards);
+        return {
+          pile,
+          sameAttrs
+        };
+      });
+
+      let allValid = true;
+      for (const evald of trioEvaluations) {
+        const valid = evald.sameAttrs.length >= 1;
+        evald.pile.validState = valid;
+        if (!valid) allValid = false;
+      }
+
+      renderBoard();
+
+      if (!allValid) {
+        setStatus("At least one trio is invalid. Match by same letter, same font, or same colour.", "bad");
+        return;
+      }
+
+      const leftoverId = singletonPiles[0].cardIds[0];
+      const playerSignature = trioPiles
+        .map(p => [...p.cardIds].sort().join("|"))
+        .sort()
+        .join(" || ");
+      const matchesDailySolution = puzzle.solutions.some(sol =>
+        sol.leftoverId === leftoverId && sol.signature === playerSignature
+      );
+
+      if (!matchesDailySolution) {
+        if (leftoverId !== puzzle.forcedLeftoverId) {
+          setStatus("Those trios work locally, but the leftover is not today's forced unlabelled card.", "bad");
+          return;
+        }
+        setStatus("Those trios are close, but don't match a valid full arrangement for today.", "bad");
+        return;
+      }
+
+      trioPiles.forEach(p => {
+        p.locked = true;
+        p.validState = true;
+      });
+      const leftoverPile = singletonPiles[0];
+      leftoverPile.locked = true;
+      leftoverPile.oddOne = true;
+      leftoverPile.oddRevealUntil = Date.now() + 520;
+
+      solvedToday = true;
+      checkBtn.disabled = true;
+      renderBoard();
+      scheduleOddRevealClear(leftoverPile.id, leftoverPile.oddRevealUntil);
+
+      const leftover = puzzle.cardById[leftoverId];
+      setBoardSuccessGlow();
+      setStatus(`Solved. “${cardDisplayText(leftover)}” is the odd one out.`, "good");
+    }
+
+    function boardEventToPoint(e) {
+      const rect = boardEl.getBoundingClientRect();
+      const cardSize = getCardSize();
+      return {
+        x: e.clientX - rect.left - cardSize / 2,
+        y: e.clientY - rect.top - cardSize / 2
+      };
+    }
+
+    function wireBoardDropzone() {
+      boardEl.addEventListener("dragenter", (e) => {
+        if (!draggedCardId) return;
+        e.preventDefault();
+        boardDragDepth++;
+        boardEl.classList.add("dragover");
+      });
+
+      boardEl.addEventListener("dragover", (e) => {
+        if (!draggedCardId) return;
+        e.preventDefault();
+        boardEl.classList.add("dragover");
+      });
+
+      boardEl.addEventListener("dragleave", () => {
+        if (!draggedCardId) return;
+        boardDragDepth = Math.max(0, boardDragDepth - 1);
+        if (boardDragDepth === 0) boardEl.classList.remove("dragover");
+      });
+
+      boardEl.addEventListener("drop", (e) => {
+        if (!draggedCardId) return;
+        e.preventDefault();
+        boardDragDepth = 0;
+        boardEl.classList.remove("dragover");
+
+        const { x, y } = boardEventToPoint(e);
+        splitOrMoveToBoard(draggedCardId, x, y);
+      });
+    }
+
+    function applySettingsFromUI() {
+      document.body.dataset.palette = paletteSelect.value;
+      document.body.classList.toggle("high-contrast", contrastToggle.checked);
+      saveSettings({
+        palette: paletteSelect.value,
+        highContrast: contrastToggle.checked,
+        highlightErrors: highlightErrorsToggle.checked
+      });
+      if (puzzle) renderBoard();
+    }
+
+    function loadDay(offset) {
+      const dayDate = localDateForOffset(offset);
+      const dateKey = formatDateKey(dayDate);
+      const seed = dateKeyToSeed(dateKey);
+
+      let generated = null;
+      let seedUsed = null;
+      for (let i = 0; i < 10; i++) {
+        try {
+          const candidateSeed = seed + i * 97;
+          generated = generatePuzzle(candidateSeed);
+          seedUsed = candidateSeed;
+          break;
+        } catch {
+          // Try another deterministic seed variant for the same day.
+        }
+      }
+      if (!generated) {
+        setStatus("Could not generate today's puzzle. Please try reloading.", "bad");
+        return;
+      }
+
+      puzzle = generated;
+      puzzle.dateKey = dateKey;
+      puzzle.seedUsed = seedUsed;
+
+      dayPillEl.textContent = `${formatDayPill(dayDate)} (${dateKey})`;
+
+      piles = buildInitialPiles(seed);
+      resolveAllPileOverlaps();
+      renderBoard();
+      boardWrapEl.classList.remove("success");
+
+      checkBtn.disabled = false;
+      setStatus("Drag letters into trios. Validation runs automatically when the board reaches 3 trios + 1 leftover.");
+    }
+
+    checkBtn.addEventListener("click", checkCurrentBoard);
+
+    resetBtn.addEventListener("click", () => {
+      if (!puzzle) return;
+      const seed = dateKeyToSeed(puzzle.dateKey);
+      piles = buildInitialPiles(seed);
+      resolveAllPileOverlaps();
+      renderBoard();
+      boardWrapEl.classList.remove("success");
+      checkBtn.disabled = false;
+      setStatus("Layout reset. Build 3 trios and leave 1 leftover.");
+    });
+
+    nextBtn.addEventListener("click", () => {
+      dayOffset += 1;
+      loadDay(dayOffset);
+    });
+
+    debugBtn.addEventListener("click", () => {
+      copyDebugSnapshot("manual_button");
+    });
+
+    paletteSelect.addEventListener("change", applySettingsFromUI);
+    highlightErrorsToggle.addEventListener("change", applySettingsFromUI);
+    contrastToggle.addEventListener("change", applySettingsFromUI);
+
+    window.addEventListener("resize", () => {
+      // Keep all clusters in bounds while preserving their size-specific layouts.
+      piles.forEach(clampPilePosition);
+      resolveAllPileOverlaps();
+      renderBoard();
+    });
+
+    wireBoardDropzone();
+    window.buildDebugSnapshot = buildDebugSnapshot;
+
+    (function init() {
+      const settings = loadSettings();
+      if (settings.palette === "safe") paletteSelect.value = "safe";
+      if (settings.highlightErrors === true) highlightErrorsToggle.checked = true;
+      if (settings.highContrast === true) contrastToggle.checked = true;
+      applySettingsFromUI();
+
+      loadDay(dayOffset);
+    })();
+  </script>
+</body>
+</html>
