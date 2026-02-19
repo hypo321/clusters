@@ -36,22 +36,28 @@
       letter-spacing: 0.1px;
     }
 
+    body::before {
+      content: "";
+      position: fixed;
+      inset: -20%;
+      pointer-events: none;
+      background:
+        radial-gradient(780px 540px at 50% 45%, rgba(108, 180, 129, 0.2) 0%, rgba(108, 180, 129, 0) 72%),
+        linear-gradient(160deg, rgba(120, 190, 140, 0.14) 0%, rgba(120, 190, 140, 0) 60%);
+      opacity: 0;
+      transition: opacity 640ms ease;
+      z-index: 0;
+    }
+
+    body.success-tint::before {
+      opacity: 1;
+    }
+
     body[data-palette="safe"] {
       --tone0: #0072b2;
       --tone1: #e69f00;
       --tone2: #009e73;
       --tone3: #cc79a7;
-    }
-
-    body.high-contrast {
-      --bg: #f7efdf;
-      --bg2: #efdfc3;
-      --panel: #fffaf1;
-      --panel2: #fff3e2;
-      --text: #2d2013;
-      --muted: #5a4026;
-      --border: #9c7b54;
-      --focus: #7ea2ca;
     }
 
     .topbar {
@@ -122,7 +128,7 @@
       display: none;
     }
 
-    button, select {
+    button {
       border-radius: 10px;
       border: 1px solid var(--border);
       color: var(--text);
@@ -133,7 +139,7 @@
     }
 
     button { cursor: pointer; }
-    button:hover, select:hover { border-color: #bc9c72; }
+    button:hover { border-color: #bc9c72; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .toggle {
@@ -199,7 +205,7 @@
       inset: -25%;
       pointer-events: none;
       opacity: 0;
-      background: radial-gradient(circle, rgba(241,181,104,0.32) 0%, rgba(241,181,104,0) 62%);
+      background: radial-gradient(circle, rgba(118, 189, 134, 0.34) 0%, rgba(118, 189, 134, 0) 62%);
       transition: opacity 500ms ease;
     }
 
@@ -243,6 +249,7 @@
       position: relative;
       width: 100%;
       height: 520px;
+      z-index: 1;
     }
 
     .board.dragover {
@@ -259,6 +266,14 @@
       transform-origin: 50% 50%;
     }
 
+    .pile-hit-area {
+      position: absolute;
+      inset: calc(-1 * var(--drop-halo, 14px));
+      border-radius: 999px;
+      background: transparent;
+      pointer-events: auto;
+    }
+
     .pile.group {
       background: rgba(255,255,255,0.24);
       border-color: rgba(156,120,79,0.34);
@@ -267,6 +282,12 @@
     .pile.drop-target {
       border-color: rgba(129,156,191,0.7);
       background: rgba(129,156,191,0.14);
+    }
+
+    .pile.drop-target:not(.group) {
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
     }
 
     .pile.valid {
@@ -500,17 +521,13 @@
           <button id="debugBtn" title="Copy current game state JSON to clipboard">Debug: Copy State</button>
         </div>
         <div class="controls">
-          <select id="paletteSelect" aria-label="Palette mode">
-            <option value="standard">Standard palette</option>
-            <option value="safe">Colour-blind safe</option>
-          </select>
+          <label class="toggle">
+            <input type="checkbox" id="paletteSafeToggle" />
+            Colour-blind safe
+          </label>
           <label class="toggle">
             <input type="checkbox" id="highlightErrorsToggle" />
             Highlight errors
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="contrastToggle" />
-            High contrast
           </label>
         </div>
       </div>
@@ -532,12 +549,15 @@
     const DESKTOP_CARD_SIZE = 84;
     const MOBILE_CARD_SIZE = 74;
     const PILE_GAP = 10;
+    const DROP_HALO = 16;
 
     let dayOffset = 0;
     let puzzle = null;
     let piles = [];
     let nextPileId = 1;
     let draggedCardId = null;
+    let draggedGrabOffsetX = 0;
+    let draggedGrabOffsetY = 0;
     let boardDragDepth = 0;
     let solvedToday = false;
     let successCelebration = null;
@@ -551,9 +571,8 @@
     const resetBtn = document.getElementById("resetBtn");
     const nextBtn = document.getElementById("nextBtn");
     const debugBtn = document.getElementById("debugBtn");
-    const paletteSelect = document.getElementById("paletteSelect");
+    const paletteSafeToggle = document.getElementById("paletteSafeToggle");
     const highlightErrorsToggle = document.getElementById("highlightErrorsToggle");
-    const contrastToggle = document.getElementById("contrastToggle");
 
     function setStatus(message, kind = "") {
       statusEl.classList.remove("good", "bad");
@@ -788,9 +807,11 @@
     function findSpreadPositions(count, width, height, rng) {
       const points = [];
       const cardSize = getCardSize();
-      const margin = 16;
-      const maxX = Math.max(margin, width - cardSize - margin);
-      const maxY = Math.max(margin, height - cardSize - margin);
+      const edgeInset = Math.max(44, cardSize * 0.8);
+      const minX = edgeInset;
+      const minY = edgeInset;
+      const maxX = Math.max(minX, width - cardSize - edgeInset);
+      const maxY = Math.max(minY, height - cardSize - edgeInset);
       const samples = 140;
 
       for (let i = 0; i < count; i++) {
@@ -798,8 +819,8 @@
         let bestScore = -Infinity;
 
         for (let s = 0; s < samples; s++) {
-          const x = margin + rng() * Math.max(1, maxX - margin);
-          const y = margin + rng() * Math.max(1, maxY - margin);
+          const x = minX + rng() * Math.max(1, maxX - minX);
+          const y = minY + rng() * Math.max(1, maxY - minY);
 
           let nearest = Infinity;
           for (const p of points) {
@@ -809,7 +830,7 @@
 
           const centerX = width / 2;
           const centerY = height / 2;
-          const centerBias = Math.hypot((x + cardSize / 2) - centerX, (y + cardSize / 2) - centerY) * 0.04;
+          const centerBias = Math.hypot((x + cardSize / 2) - centerX, (y + cardSize / 2) - centerY) * 0.12;
           const score = (points.length === 0 ? 0 : nearest) - centerBias;
 
           if (score > bestScore) {
@@ -1008,6 +1029,7 @@
       successCelebration = null;
       boardWrapEl.classList.remove("celebrating");
       boardWrapEl.classList.remove("success-settling");
+      document.body.classList.remove("success-tint");
     }
 
     function startSuccessCelebration(trioPiles, leftoverPile) {
@@ -1092,6 +1114,172 @@
         rects.set(id, el.getBoundingClientRect());
       }
       return rects;
+    }
+
+    function domRectToRect(rect) {
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      };
+    }
+
+    function expandRect(rect, padding) {
+      return {
+        left: rect.left - padding,
+        top: rect.top - padding,
+        right: rect.right + padding,
+        bottom: rect.bottom + padding
+      };
+    }
+
+    function overlapArea(a, b) {
+      const left = Math.max(a.left, b.left);
+      const right = Math.min(a.right, b.right);
+      const top = Math.max(a.top, b.top);
+      const bottom = Math.min(a.bottom, b.bottom);
+      if (right <= left || bottom <= top) return 0;
+      return (right - left) * (bottom - top);
+    }
+
+    function rectCenter(rect) {
+      return {
+        x: (rect.left + rect.right) / 2,
+        y: (rect.top + rect.bottom) / 2
+      };
+    }
+
+    function draggedCardRectAt(clientX, clientY) {
+      const cardSize = getCardSize();
+      const offsetX = Number.isFinite(draggedGrabOffsetX) ? draggedGrabOffsetX : cardSize / 2;
+      const offsetY = Number.isFinite(draggedGrabOffsetY) ? draggedGrabOffsetY : cardSize / 2;
+      const left = clientX - offsetX;
+      const top = clientY - offsetY;
+      return {
+        left,
+        top,
+        right: left + cardSize,
+        bottom: top + cardSize
+      };
+    }
+
+    function pickSwapTargetByOverlap(draggedCardId, targetPile, clientX, clientY) {
+      if (!targetPile || targetPile.cardIds.length !== 3) return null;
+      const sourcePile = getPileByCard(draggedCardId);
+      if (!sourcePile || sourcePile.id === targetPile.id) return null;
+
+      const draggedRect = draggedCardRectAt(clientX, clientY);
+      let bestId = null;
+      let bestArea = 0;
+      let nearest = { id: null, distance: Infinity };
+
+      for (const targetCardId of targetPile.cardIds) {
+        const el = boardEl.querySelector(`.card[data-card-id="${targetCardId}"]`);
+        if (!el) continue;
+        const rect = domRectToRect(el.getBoundingClientRect());
+        const area = overlapArea(draggedRect, expandRect(rect, DROP_HALO));
+        if (area > bestArea) {
+          bestArea = area;
+          bestId = targetCardId;
+        }
+
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const d = Math.hypot(clientX - cx, clientY - cy);
+        if (d < nearest.distance) nearest = { id: targetCardId, distance: d };
+      }
+
+      if (bestArea > 0) return bestId;
+      const fallbackDistance = getCardSize() * 0.72 + DROP_HALO;
+      if (nearest.id && nearest.distance <= fallbackDistance) return nearest.id;
+      return null;
+    }
+
+    function scoreDragVsTargetRect(draggedRect, targetRect, padding) {
+      const expanded = expandRect(targetRect, padding);
+      const area = overlapArea(draggedRect, expanded);
+      if (area > 0) return area + 100000;
+
+      const dCenter = rectCenter(draggedRect);
+      const tCenter = rectCenter(targetRect);
+      const distance = Math.hypot(dCenter.x - tCenter.x, dCenter.y - tCenter.y);
+      const reach = (Math.max(targetRect.width, targetRect.height) + getCardSize()) * 0.6 + padding;
+      if (distance > reach) return 0;
+      return (reach - distance) * 100;
+    }
+
+    function findBestDropIntent(draggedCardId, clientX, clientY) {
+      if (!draggedCardId) return null;
+      const sourcePile = getPileByCard(draggedCardId);
+      if (!sourcePile) return null;
+
+      const draggedRect = draggedCardRectAt(clientX, clientY);
+      let best = null;
+
+      for (const pile of piles) {
+        if (pile.id === sourcePile.id) continue;
+        const pileEl = boardEl.querySelector(`.pile[data-pile-id="${pile.id}"]`);
+        if (!pileEl) continue;
+        const pileRect = domRectToRect(pileEl.getBoundingClientRect());
+        const pilePadding = DROP_HALO + getCardSize() * (pile.cardIds.length === 1 ? 0.45 : 0.28);
+        const score = scoreDragVsTargetRect(draggedRect, pileRect, pilePadding);
+        if (score <= 0) continue;
+
+        if (canDropIntoPile(pile, draggedCardId)) {
+          if (!best || score > best.score) {
+            best = {
+              mode: "move",
+              pileId: pile.id,
+              score
+            };
+          }
+          continue;
+        }
+
+        if (canSwapIntoFullPile(draggedCardId, pile)) {
+          const targetCardId = pickSwapTargetByOverlap(draggedCardId, pile, clientX, clientY);
+          if (!targetCardId) continue;
+          // Prefer swap when it is comparably close, so full trios feel responsive.
+          const swapScore = score + 2500;
+          if (!best || swapScore > best.score) {
+            best = {
+              mode: "swap",
+              pileId: pile.id,
+              targetCardId,
+              score: swapScore
+            };
+          }
+        }
+      }
+
+      return best;
+    }
+
+    function applyDropIntentHighlight(intent) {
+      boardEl.querySelectorAll(".pile.drop-target").forEach(el => el.classList.remove("drop-target"));
+      boardEl.querySelectorAll(".card.drop-target").forEach(el => el.classList.remove("drop-target"));
+      boardEl.querySelectorAll(".card.swap-target").forEach(el => el.classList.remove("swap-target"));
+      if (!intent) return;
+
+      const targetPile = piles.find(p => p.id === intent.pileId);
+      const pileEl = boardEl.querySelector(`.pile[data-pile-id="${intent.pileId}"]`);
+      if (pileEl && !(intent.mode === "move" && targetPile && targetPile.cardIds.length === 1)) {
+        pileEl.classList.add("drop-target");
+      }
+
+      if (intent.mode === "move" && targetPile && targetPile.cardIds.length === 1) {
+        const targetCardId = targetPile.cardIds[0];
+        const targetCardEl = boardEl.querySelector(`.card[data-card-id="${targetCardId}"]`);
+        if (targetCardEl) targetCardEl.classList.add("drop-target");
+      }
+
+      if (intent.mode === "swap" && intent.targetCardId) {
+        const cardEl = boardEl.querySelector(`.card[data-card-id="${intent.targetCardId}"]`);
+        if (cardEl) cardEl.classList.add("swap-target");
+      }
     }
 
     function animateMovedCards(cardIds, beforeRects) {
@@ -1280,6 +1468,18 @@
       return true;
     }
 
+    function canSwapIntoFullPile(cardId, targetPile) {
+      if (!cardId || !targetPile) return false;
+      if (targetPile.locked) return false;
+      if (targetPile.cardIds.length !== 3) return false;
+      if (targetPile.cardIds.includes(cardId)) return false;
+
+      const sourcePile = getPileByCard(cardId);
+      if (!sourcePile) return false;
+      if (sourcePile.id === targetPile.id) return false;
+      return true;
+    }
+
     function moveCardToPile(cardId, targetPileId) {
       const sourcePile = getPileByCard(cardId);
       const targetPile = piles.find(p => p.id === targetPileId);
@@ -1461,8 +1661,7 @@
           reason,
           capturedAt: new Date().toISOString(),
           settings: {
-            palette: paletteSelect.value,
-            highContrast: contrastToggle.checked,
+            colorBlindSafe: paletteSafeToggle.checked,
             highlightErrors: highlightErrorsToggle.checked
           },
           error: "No puzzle is currently loaded."
@@ -1492,8 +1691,7 @@
         reason,
         capturedAt: new Date().toISOString(),
         settings: {
-          palette: paletteSelect.value,
-          highContrast: contrastToggle.checked,
+          colorBlindSafe: paletteSafeToggle.checked,
           highlightErrors: highlightErrorsToggle.checked
         },
         status: {
@@ -1584,6 +1782,8 @@
         }
 
         draggedCardId = card.id;
+        draggedGrabOffsetX = Number.isFinite(e.offsetX) ? e.offsetX : getCardSize() / 2;
+        draggedGrabOffsetY = Number.isFinite(e.offsetY) ? e.offsetY : getCardSize() / 2;
         el.classList.add("dragging");
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", card.id);
@@ -1591,6 +1791,8 @@
 
       el.addEventListener("dragend", () => {
         draggedCardId = null;
+        draggedGrabOffsetX = 0;
+        draggedGrabOffsetY = 0;
         boardDragDepth = 0;
         clearDropHighlights();
         el.classList.remove("dragging");
@@ -1650,7 +1852,7 @@
           if (targetPile && targetPile.cardIds.length === 3) {
             const swapped = swapCardIntoFullPile(draggedCardId, card.id, targetPile.id);
             if (swapped) return;
-            setStatus("Drop directly onto a tile in that trio to swap.", "bad");
+            setStatus("Drop closer to a tile in that trio to swap.", "bad");
           }
           return;
         }
@@ -1688,6 +1890,7 @@
         pileEl.dataset.pileId = pile.id;
         pileEl.style.width = `${layout.width}px`;
         pileEl.style.height = `${layout.height}px`;
+        pileEl.style.setProperty("--drop-halo", `${DROP_HALO}px`);
 
         if (celebration && pile.id === celebration.oddPileId) {
           pileEl.classList.add("celebration-core");
@@ -1708,10 +1911,19 @@
           pileEl.style.top = `${pile.y}px`;
         }
 
+        const hitAreaEl = document.createElement("div");
+        hitAreaEl.className = "pile-hit-area";
+        pileEl.appendChild(hitAreaEl);
+
         pileEl.addEventListener("dragenter", (e) => {
           if (!draggedCardId) return;
           const targetPile = piles.find(p => p.id === pile.id);
           if (canDropIntoPile(targetPile, draggedCardId)) {
+            e.preventDefault();
+            pileEl.classList.add("drop-target");
+            return;
+          }
+          if (canSwapIntoFullPile(draggedCardId, targetPile)) {
             e.preventDefault();
             pileEl.classList.add("drop-target");
           }
@@ -1720,6 +1932,11 @@
         pileEl.addEventListener("dragover", (e) => {
           const targetPile = piles.find(p => p.id === pile.id);
           if (canDropIntoPile(targetPile, draggedCardId)) {
+            e.preventDefault();
+            pileEl.classList.add("drop-target");
+            return;
+          }
+          if (canSwapIntoFullPile(draggedCardId, targetPile)) {
             e.preventDefault();
             pileEl.classList.add("drop-target");
           }
@@ -1736,6 +1953,15 @@
 
           const targetPile = piles.find(p => p.id === pile.id);
           if (!canDropIntoPile(targetPile, draggedCardId)) {
+            if (canSwapIntoFullPile(draggedCardId, targetPile)) {
+              const targetCardId = pickSwapTargetByOverlap(draggedCardId, targetPile, e.clientX, e.clientY);
+              if (targetCardId) {
+                const swapped = swapCardIntoFullPile(draggedCardId, targetCardId, targetPile.id);
+                if (swapped) return;
+              }
+              setStatus("Drop closer to a tile in that trio to swap.", "bad");
+              return;
+            }
             if (targetPile && targetPile.cardIds.length >= 3) {
               setStatus("Groups can only hold 3 cards.", "bad");
             }
@@ -1848,6 +2074,7 @@
       solvedToday = true;
       checkBtn.disabled = true;
       startSuccessCelebration(trioPiles, leftoverPile);
+      document.body.classList.add("success-tint");
       boardWrapEl.classList.add("success-settling");
       renderBoard();
       animateSolveTransitionPiles(movedPileIds, beforePileRects);
@@ -1879,6 +2106,8 @@
         if (!draggedCardId) return;
         e.preventDefault();
         boardEl.classList.add("dragover");
+        const intent = findBestDropIntent(draggedCardId, e.clientX, e.clientY);
+        applyDropIntentHighlight(intent);
       });
 
       boardEl.addEventListener("dragleave", () => {
@@ -1893,17 +2122,25 @@
         boardDragDepth = 0;
         boardEl.classList.remove("dragover");
 
+        const intent = findBestDropIntent(draggedCardId, e.clientX, e.clientY);
+        if (intent && intent.mode === "move") {
+          moveCardToPile(draggedCardId, intent.pileId);
+          return;
+        }
+        if (intent && intent.mode === "swap" && intent.targetCardId) {
+          const swapped = swapCardIntoFullPile(draggedCardId, intent.targetCardId, intent.pileId);
+          if (swapped) return;
+        }
+
         const { x, y } = boardEventToPoint(e);
         splitOrMoveToBoard(draggedCardId, x, y);
       });
     }
 
     function applySettingsFromUI() {
-      document.body.dataset.palette = paletteSelect.value;
-      document.body.classList.toggle("high-contrast", contrastToggle.checked);
+      document.body.dataset.palette = paletteSafeToggle.checked ? "safe" : "standard";
       saveSettings({
-        palette: paletteSelect.value,
-        highContrast: contrastToggle.checked,
+        colorBlindSafe: paletteSafeToggle.checked,
         highlightErrors: highlightErrorsToggle.checked
       });
       if (puzzle) renderBoard();
@@ -1957,9 +2194,8 @@
       copyDebugSnapshot("manual_button");
     });
 
-    paletteSelect.addEventListener("change", applySettingsFromUI);
+    paletteSafeToggle.addEventListener("change", applySettingsFromUI);
     highlightErrorsToggle.addEventListener("change", applySettingsFromUI);
-    contrastToggle.addEventListener("change", applySettingsFromUI);
 
     window.addEventListener("resize", () => {
       // Keep all clusters in bounds while preserving their size-specific layouts.
@@ -1980,9 +2216,10 @@
 
     (function init() {
       const settings = loadSettings();
-      if (settings.palette === "safe") paletteSelect.value = "safe";
+      if (settings.colorBlindSafe === true || settings.palette === "safe") {
+        paletteSafeToggle.checked = true;
+      }
       if (settings.highlightErrors === true) highlightErrorsToggle.checked = true;
-      if (settings.highContrast === true) contrastToggle.checked = true;
       applySettingsFromUI();
 
       loadDay(dayOffset);
