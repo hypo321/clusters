@@ -566,7 +566,7 @@
     const DESKTOP_CARD_SIZE = 84;
     const MOBILE_CARD_SIZE = 74;
     const PILE_GAP = 10;
-    const DROP_HALO = 16;
+    const DROP_HALO = 3;
     const TOUCH_GHOST_OFFSET_X = 12;
     const TOUCH_GHOST_OFFSET_Y = -16;
 
@@ -1137,35 +1137,6 @@
       return rects;
     }
 
-    function domRectToRect(rect) {
-      return {
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height
-      };
-    }
-
-    function expandRect(rect, padding) {
-      return {
-        left: rect.left - padding,
-        top: rect.top - padding,
-        right: rect.right + padding,
-        bottom: rect.bottom + padding
-      };
-    }
-
-    function overlapArea(a, b) {
-      const left = Math.max(a.left, b.left);
-      const right = Math.min(a.right, b.right);
-      const top = Math.max(a.top, b.top);
-      const bottom = Math.min(a.bottom, b.bottom);
-      if (right <= left || bottom <= top) return 0;
-      return (right - left) * (bottom - top);
-    }
-
     function rectCenter(rect) {
       return {
         x: (rect.left + rect.right) / 2,
@@ -1187,49 +1158,42 @@
       };
     }
 
+    function draggedCardCenterAt(clientX, clientY) {
+      return rectCenter(draggedCardRectAt(clientX, clientY));
+    }
+
+    function nearestTargetCardInPile(targetPile, draggedCenter) {
+      if (!targetPile || !draggedCenter) return null;
+
+      let nearestCardId = null;
+      let nearestDistance = Infinity;
+
+      for (const targetCardId of targetPile.cardIds) {
+        const el = boardEl.querySelector(`.card[data-card-id="${targetCardId}"]`);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const center = rectCenter(rect);
+        const d = Math.hypot(draggedCenter.x - center.x, draggedCenter.y - center.y);
+        if (d < nearestDistance) {
+          nearestDistance = d;
+          nearestCardId = targetCardId;
+        }
+      }
+
+      if (!nearestCardId) return null;
+      return { cardId: nearestCardId, distance: nearestDistance };
+    }
+
     function pickSwapTargetByOverlap(draggedCardId, targetPile, clientX, clientY) {
       if (!targetPile || targetPile.cardIds.length !== 3) return null;
       const sourcePile = getPileByCard(draggedCardId);
       if (!sourcePile || sourcePile.id === targetPile.id) return null;
 
-      const draggedRect = draggedCardRectAt(clientX, clientY);
-      let bestId = null;
-      let bestArea = 0;
-      let nearest = { id: null, distance: Infinity };
-
-      for (const targetCardId of targetPile.cardIds) {
-        const el = boardEl.querySelector(`.card[data-card-id="${targetCardId}"]`);
-        if (!el) continue;
-        const rect = domRectToRect(el.getBoundingClientRect());
-        const area = overlapArea(draggedRect, expandRect(rect, DROP_HALO));
-        if (area > bestArea) {
-          bestArea = area;
-          bestId = targetCardId;
-        }
-
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        const d = Math.hypot(clientX - cx, clientY - cy);
-        if (d < nearest.distance) nearest = { id: targetCardId, distance: d };
-      }
-
-      if (bestArea > 0) return bestId;
-      const fallbackDistance = getCardSize() * 0.72 + DROP_HALO;
-      if (nearest.id && nearest.distance <= fallbackDistance) return nearest.id;
+      const draggedCenter = draggedCardCenterAt(clientX, clientY);
+      const nearest = nearestTargetCardInPile(targetPile, draggedCenter);
+      const touchingThreshold = getCardSize() + DROP_HALO;
+      if (nearest && nearest.distance <= touchingThreshold) return nearest.cardId;
       return null;
-    }
-
-    function scoreDragVsTargetRect(draggedRect, targetRect, padding) {
-      const expanded = expandRect(targetRect, padding);
-      const area = overlapArea(draggedRect, expanded);
-      if (area > 0) return area + 100000;
-
-      const dCenter = rectCenter(draggedRect);
-      const tCenter = rectCenter(targetRect);
-      const distance = Math.hypot(dCenter.x - tCenter.x, dCenter.y - tCenter.y);
-      const reach = (Math.max(targetRect.width, targetRect.height) + getCardSize()) * 0.6 + padding;
-      if (distance > reach) return 0;
-      return (reach - distance) * 100;
     }
 
     function findBestDropIntent(draggedCardId, clientX, clientY) {
@@ -1237,19 +1201,18 @@
       const sourcePile = getPileByCard(draggedCardId);
       if (!sourcePile) return null;
 
-      const draggedRect = draggedCardRectAt(clientX, clientY);
+      const draggedCenter = draggedCardCenterAt(clientX, clientY);
+      const touchingThreshold = getCardSize() + DROP_HALO;
       let best = null;
 
       for (const pile of piles) {
         if (pile.id === sourcePile.id) continue;
-        const pileEl = boardEl.querySelector(`.pile[data-pile-id="${pile.id}"]`);
-        if (!pileEl) continue;
-        const pileRect = domRectToRect(pileEl.getBoundingClientRect());
-        const pilePadding = DROP_HALO + getCardSize() * (pile.cardIds.length === 1 ? 0.45 : 0.28);
-        const score = scoreDragVsTargetRect(draggedRect, pileRect, pilePadding);
-        if (score <= 0) continue;
+
+        const nearest = nearestTargetCardInPile(pile, draggedCenter);
+        if (!nearest || nearest.distance > touchingThreshold) continue;
 
         if (canDropIntoPile(pile, draggedCardId)) {
+          const score = touchingThreshold - nearest.distance;
           if (!best || score > best.score) {
             best = {
               mode: "move",
@@ -1261,15 +1224,12 @@
         }
 
         if (canSwapIntoFullPile(draggedCardId, pile)) {
-          const targetCardId = pickSwapTargetByOverlap(draggedCardId, pile, clientX, clientY);
-          if (!targetCardId) continue;
-          // Prefer swap when it is comparably close, so full trios feel responsive.
-          const swapScore = score + 2500;
+          const swapScore = touchingThreshold - nearest.distance + 0.5;
           if (!best || swapScore > best.score) {
             best = {
               mode: "swap",
               pileId: pile.id,
-              targetCardId,
+              targetCardId: nearest.cardId,
               score: swapScore
             };
           }
